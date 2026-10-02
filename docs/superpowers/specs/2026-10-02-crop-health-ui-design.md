@@ -18,6 +18,7 @@ truth. This app computes no indices and no interpretation of its own.
 
 - Stack: React, Vite, Tailwind CSS.
 - Data: live ArcGIS services from the start, no mock data.
+- Appearance: both a light and a dark theme, switchable by the user.
 - Sign-in: a form in the app takes GeoHub credentials; a small server exchanges
   them for a portal token. Same pattern as the `Natural-resource` project.
 - Map: ArcGIS Maps SDK for JavaScript (`@arcgis/core`).
@@ -118,6 +119,7 @@ src/
   api/
     arcgis.js                 query helper: fetch, paging, error mapping
     cropHealth.js             getParcel, getObservations, listParcels, getIndexGuide
+  theme/                      ThemeProvider, ThemeToggle
   lib/
     upi.js                    normalise and validate a UPI
     history.js                recent UPIs in localStorage
@@ -166,11 +168,11 @@ the original location after sign-in.
 
 ### Dashboard
 
-Dark theme, laid out like the existing dashboard: header on top; a row with
-the search panel, the map and the result panel; a row with the parcels table
-and the chart. On narrow screens the areas stack in one column.
+Laid out like the existing dashboard: header on top; a row with the search
+panel, the map and the result panel; a row with the parcels table and the
+chart. On narrow screens the areas stack in one column.
 
-**Header:** app title, signed-in user's name, Sign out.
+**Header:** app title, theme toggle, signed-in user's name, Sign out.
 
 **Search panel:**
 - Tools tab: UPI input and Run button. Enter submits.
@@ -203,6 +205,31 @@ clicking a row selects that parcel. The selected row is highlighted.
 
 The selected UPI is kept in the URL (`?upi=…`), so a parcel view can be
 reloaded or shared with another signed-in user.
+
+## Themes
+
+The app has a light theme and a dark theme, covering the sign-in page and the
+dashboard.
+
+- On first visit the theme follows the operating system setting
+  (`prefers-color-scheme`).
+- The header toggle switches between light and dark. The choice is stored in
+  `localStorage` and wins over the system setting on later visits. The sign-in
+  page has the same toggle.
+- The theme is applied before the first paint (a small inline script in
+  `index.html` sets the class on `<html>`), so the page does not flash the
+  wrong theme on load.
+- Implementation: Tailwind's class-based dark mode. Colours are defined once
+  as CSS variables for each theme (surface, border, text, accent, and the
+  three index colours) and referenced through Tailwind theme tokens, so
+  components do not carry per-theme colour values.
+- The three index colours are chosen separately for each theme so the lines
+  and card values stay readable against both backgrounds.
+- Chart axes, grid, tooltip and legend read the same variables.
+- The ArcGIS map widgets (zoom, layer switcher) use the SDK's matching light
+  or dark stylesheet. The Sentinel-2 imagery itself is the same in both
+  themes; the parcel outline and highlight colours are picked to stay visible
+  over it.
 
 ## UPI handling
 
@@ -246,6 +273,9 @@ Vitest with Testing Library.
   converted to 401.
 - Components: not-found, loading, error-with-retry and null-value states of
   the result panel; table row selection; history list.
+- Theme: follows the system setting when nothing is stored, the toggle
+  switches and persists the choice, and a stored choice overrides the system
+  setting.
 
 The map component is checked by running the app, not by unit tests.
 
