@@ -79,32 +79,36 @@ export default function IndexMeter({ code, hint, value, level, color, guide }) {
   const hasValue = typeof value === 'number' && Number.isFinite(value)
 
   return (
-    <section aria-label={code} className="space-y-1.5">
-      <div className="flex items-end justify-between gap-3">
+    <section aria-label={code} className="panel flex flex-col gap-3 p-5">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
           <h3 className="font-display text-sm font-semibold">{code}</h3>
           <span className="truncate text-xs text-ink-2">{hint}</span>
-          <button
-            type="button"
-            onClick={() => setOpen((current) => !current)}
-            aria-label={`About ${code}`}
-            aria-expanded={open}
-            className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line text-[11px] text-ink-2 transition hover:bg-raised hover:text-ink"
-          >
-            i
-          </button>
         </div>
-        <p className="font-display text-2xl font-semibold leading-none" data-testid={`${code}-value`}>
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          aria-label={`About ${code}`}
+          aria-expanded={open}
+          className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line text-xs transition hover:bg-raised hover:text-ink ${
+            open ? 'bg-raised text-ink' : 'text-ink-2'
+          }`}
+        >
+          i
+        </button>
+      </div>
+
+      <div>
+        <p className="font-display text-4xl font-semibold leading-none tracking-tight" data-testid={`${code}-value`}>
           {formatIndex(value)}
+        </p>
+        <p className="mt-1.5 min-h-5 text-sm font-medium text-ink-2" data-testid={`${code}-level`}>
+          {hasValue && level ? level : null}
         </p>
       </div>
 
       {bands && <Scale code={code} bands={bands} spot={locate(bands, value)} color={color} />}
-
-      <p className="min-h-5 text-sm font-medium" data-testid={`${code}-level`}>
-        {hasValue && level ? level : null}
-      </p>
 
       {open && <Note code={code} entry={entry} guide={guide} />}
     </section>

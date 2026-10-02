@@ -7,9 +7,8 @@ const MESSAGE = 'Enter a UPI in the form 5/05/10/02/1939'
 
 function renderBar(props) {
   const onSubmit = vi.fn()
-  const onOpenParcels = vi.fn()
-  const view = render(<SearchBar selected="" history={[]} onSubmit={onSubmit} onOpenParcels={onOpenParcels} {...props} />)
-  return { onSubmit, onOpenParcels, ...view }
+  const view = render(<SearchBar selected="" history={[]} onSubmit={onSubmit} {...props} />)
+  return { onSubmit, ...view }
 }
 
 describe('SearchBar', () => {
@@ -42,9 +41,9 @@ describe('SearchBar', () => {
   })
 
   it('follows the selected parcel when it changes elsewhere', () => {
-    const { rerender, onSubmit, onOpenParcels } = renderBar({ selected: '5/05/10/02/1939' })
+    const { rerender, onSubmit } = renderBar({ selected: '5/05/10/02/1939' })
     expect(screen.getByLabelText('UPI')).toHaveValue('5/05/10/02/1939')
-    rerender(<SearchBar selected="5/02/06/06/1702" history={[]} onSubmit={onSubmit} onOpenParcels={onOpenParcels} />)
+    rerender(<SearchBar selected="5/02/06/06/1702" history={[]} onSubmit={onSubmit} />)
     expect(screen.getByLabelText('UPI')).toHaveValue('5/02/06/06/1702')
   })
 
@@ -76,9 +75,4 @@ describe('SearchBar', () => {
     expect(screen.queryByText('Recent parcels')).toBeNull()
   })
 
-  it('opens the parcels list', async () => {
-    const { onOpenParcels } = renderBar()
-    await userEvent.click(screen.getByRole('button', { name: 'Analysed parcels' }))
-    expect(onOpenParcels).toHaveBeenCalledTimes(1)
-  })
 })

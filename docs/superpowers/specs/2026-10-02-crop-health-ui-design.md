@@ -175,30 +175,32 @@ the original location after sign-in.
 ### Dashboard
 
 > **Superseded layout (2026-10-02, later the same day).** The first build
-> followed the grid described below and read as an Esri dashboard. It was
-> redesigned as "map as the canvas"; the content of each area is unchanged,
-> but the arrangement is now:
+> followed the grid described below and read as an Esri dashboard. A second
+> pass made the map the whole page with floating panels, which left the page
+> without structure. The current layout is an app frame; the data shown is
+> unchanged:
 >
-> - The map fills the window. Everything else floats over it.
-> - A search pill (top left) holds the parcels-list button, the UPI field and
->   Run. Focusing the field offers the recent parcels, replacing the History
->   tab.
-> - A pill (top right) holds the app name, the user's name, the theme toggle
->   and Sign out.
-> - Zoom and the imagery switcher sit bottom left. The NDVI and NDMI
->   renderings are drawn at 70% opacity so the satellite basemap shows
->   through.
-> - The analysed-parcels table opens in a drawer from the left, with a filter
->   box. Choosing a parcel closes it.
-> - A selected parcel opens a report sheet: on the right on wide screens
->   (it can be widened), rising from the bottom on phones. The map centres
->   the parcel in the part the sheet does not cover. Closing the sheet clears
->   the selection.
-> - In the sheet each index is a meter: the value, a scale split into the
->   bands of the `IndexGuide` thresholds with a marker at the value, and the
->   level from the layer. If the thresholds cannot be read, the scale is left
->   out. The explanation opens in place, not in a dialog.
-> - With nothing selected, the map frames the analysed parcels once they load.
+> - **Sidebar** (fixed on wide screens, a slide-in menu on small ones): brand,
+>   the analysed parcels as a list with a filter box and a sort control, and
+>   the account (name, theme toggle, Sign out). The selected parcel is marked.
+> - **Top bar:** the UPI search with Run. Focusing the field offers the recent
+>   parcels, replacing the History tab.
+> - **Overview** (no parcel open): parcels analysed, districts, latest clear
+>   view, and a count of parcels by NDVI level as given by the layer; below
+>   them the map as a large card, framing the analysed parcels.
+> - **Parcel report** (a parcel open): title, district, place and facts; the
+>   layer's headline; the three indices as cards; then the history chart
+>   beside a smaller location map. "Overview" goes back and clears the
+>   selection.
+> - **Index cards:** the value, the level from the layer, and a scale split
+>   into the bands of the `IndexGuide` thresholds with a marker at the value.
+>   If the thresholds cannot be read, the scale is left out. The explanation
+>   opens in place, not in a dialog.
+> - **Map:** NDVI and NDMI renderings are drawn at 70% opacity so the
+>   satellite basemap shows through. It stays mounted when moving between the
+>   overview and a report.
+> - **Chart:** y-axis ticks every 0.2; series listed in the order NDVI, NDMI,
+>   NDRE.
 > - Type: Archivo for headings and numbers, Inter for text, bundled with the
 >   app. Sign-in page: form beside a public satellite view of the irrigation
 >   circles at Nasho.

@@ -162,7 +162,7 @@ export default function ParcelMap({ parcels, selected, onSelect, padding, contro
   }
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
       <div ref={containerRef} className="absolute inset-0" />
       {/* Kept clear of the attribution line and of a sheet rising from the bottom. */}
       <div
@@ -178,7 +178,7 @@ export default function ParcelMap({ parcels, selected, onSelect, padding, contro
             −
           </button>
         </div>
-        <div role="group" aria-label="Imagery" className="glass pointer-events-auto flex gap-1 rounded-full p-1 text-xs shadow-float">
+        <div role="group" aria-label="Imagery" className="glass pointer-events-auto flex flex-wrap gap-1 rounded-2xl p-1 text-xs shadow-float">
           {MODES.map((m) => (
             <button
               key={m.id}

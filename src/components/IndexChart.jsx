@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatDate, formatIndex, formatMonth } from '../lib/format.js'
+import { axisTicks } from '../lib/ticks.js'
 import { CHART_COLORS, SERIES } from '../theme/palette.js'
 import { useTheme } from '../theme/ThemeContext.jsx'
 
 
 function Lines({ observations, colors }) {
   const tick = { fill: colors.text, fontSize: 12 }
+  const ticks = axisTicks(observations.flatMap((row) => SERIES.map((s) => row[s.key])))
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={observations} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
@@ -23,8 +25,8 @@ function Lines({ observations, colors }) {
           minTickGap={48}
         />
         <YAxis
-          // Round the range out to the nearest 0.2 so the ticks land on clean values.
-          domain={[(min) => Math.floor(min * 5) / 5, (max) => Math.ceil(max * 5) / 5]}
+          domain={[ticks[0], ticks[ticks.length - 1]]}
+          ticks={ticks}
           tickFormatter={(value) => value.toFixed(1)}
           tick={tick}
           tickLine={false}
@@ -34,6 +36,7 @@ function Lines({ observations, colors }) {
         <Tooltip
           // A missing index is listed as a dash, not left out.
           filterNull={false}
+          itemSorter={() => 0}
           labelFormatter={formatDate}
           formatter={(value) => formatIndex(value)}
           cursor={{ stroke: colors.axis, strokeWidth: 1 }}
@@ -48,6 +51,8 @@ function Lines({ observations, colors }) {
           itemStyle={{ color: colors.ink2 }}
         />
         <Legend
+          // Keep NDVI, NDMI, NDRE in the same order as the cards above.
+          itemSorter={() => 0}
           iconType="plainline"
           formatter={(value) => <span style={{ color: colors.ink2, fontSize: 12 }}>{value}</span>}
         />
@@ -131,15 +136,15 @@ export default function IndexChart({ status, observations, error, onRetry }) {
     body = <Rows observations={observations} />
   } else {
     body = (
-      <div className="h-64">
+      <div className="h-72">
         <Lines observations={observations} colors={CHART_COLORS[theme]} />
       </div>
     )
   }
 
   return (
-    <section aria-labelledby="chart-title">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+    <section aria-labelledby="chart-title" className="panel h-full p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 id="chart-title" className="font-display text-sm font-semibold">
             Index history

@@ -65,7 +65,7 @@ const GUIDE = [
     thresholds: 'below 0.20 bare; 0.20-0.35 very sparse; 0.35-0.55 growing; 0.55-0.75 full canopy; above 0.75 dense',
   },
 ]
-const PROMPT = 'Search a UPI, pick a parcel on the map, or open the list.'
+const PROMPT = 'Search a UPI, pick a parcel on the map, or choose one from the list.'
 
 function Search() {
   return <output data-testid="search">{useLocation().search}</output>
@@ -84,8 +84,10 @@ function renderDashboard(initial = '/') {
   )
 }
 
-const sheet = () => screen.getByRole('complementary', { name: 'Parcel analysis' })
-const openParcels = () => userEvent.click(screen.getByRole('button', { name: 'Analysed parcels' }))
+const report = () => screen.getByRole('region', { name: 'Parcel analysis' })
+const noReport = () => expect(screen.queryByRole('region', { name: 'Parcel analysis' })).toBeNull()
+const sidebar = () => screen.getByRole('complementary', { name: 'Parcels and account' })
+const inList = (upi) => within(sidebar()).findByRole('button', { name: new RegExp(upi) })
 
 beforeEach(() => {
   for (const fn of [getParcel, getObservations, listParcels, getIndexGuide, expire, signOut]) fn.mockReset()
@@ -96,22 +98,26 @@ beforeEach(() => {
 })
 
 describe('Dashboard', () => {
-  it('starts with the map, a prompt and no parcel sheet', async () => {
+  it('starts with an overview of the analysed parcels, the list and the map', async () => {
     renderDashboard()
-    expect(screen.getByText('Tresor S')).toBeInTheDocument()
+    expect(within(sidebar()).getByText('Tresor S')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument()
     expect(screen.getByText(PROMPT)).toBeInTheDocument()
-    expect(screen.queryByRole('complementary', { name: 'Parcel analysis' })).toBeNull()
+    noReport()
+    expect(await inList(B.upi)).toBeInTheDocument()
+    expect(screen.getByText('Parcels analysed').closest('div')).toHaveTextContent('2')
     await waitFor(() => expect(screen.getByTestId('map')).toHaveTextContent('2 outlines, selected none'))
     expect(getParcel).not.toHaveBeenCalled()
   })
 
-  it('opens the parcel named in the link in a sheet and remembers it in history', async () => {
+  it('opens the parcel named in the link as a report and remembers it in history', async () => {
     renderDashboard(`/?upi=${A.upi}`)
-    expect(await within(sheet()).findByRole('heading', { name: A.upi })).toBeInTheDocument()
-    expect(within(sheet()).getByText('Kirehe')).toBeInTheDocument()
+    expect(await within(report()).findByRole('heading', { name: A.upi })).toBeInTheDocument()
+    expect(within(report()).getByText('Kirehe')).toBeInTheDocument()
     expect(await screen.findByTestId('map')).toHaveTextContent(`selected ${A.upi}`)
-    expect(await within(sheet()).findByText('1 clear date')).toBeInTheDocument()
+    expect(await screen.findByText('1 clear date')).toBeInTheDocument()
     expect(screen.queryByText(PROMPT)).toBeNull()
+    expect(await inList(A.upi)).toHaveAttribute('aria-current', 'true')
     expect(JSON.parse(window.localStorage.getItem('crophealth-history'))).toEqual([A.upi])
     expect(screen.getByLabelText('UPI')).toHaveValue(A.upi)
   })
@@ -130,25 +136,28 @@ describe('Dashboard', () => {
     expect(await screen.findByRole('img', { name: /^NDVI scale: bare, very sparse/ })).toBeInTheDocument()
   })
 
-  it('opens a parcel from the list and closes the list', async () => {
+  it('opens a parcel from the list', async () => {
     renderDashboard()
-    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
-    await openParcels()
-    const drawer = screen.getByRole('dialog', { name: 'Analysed parcels' })
-    await userEvent.click(await within(drawer).findByRole('button', { name: B.upi }))
-    expect(await screen.findByRole('heading', { name: B.upi })).toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
+    await userEvent.click(await inList(B.upi))
+    expect(await within(report()).findByRole('heading', { name: B.upi })).toBeInTheDocument()
     expect(selectedInUrl()).toBe(B.upi)
   })
 
-  it('closes the parcels list with its close button and with Escape', async () => {
+  it('opens the menu on a small screen, and closes it on Escape, on close and after choosing a parcel', async () => {
     renderDashboard()
-    await openParcels()
-    await userEvent.click(screen.getByRole('button', { name: 'Close list' }))
-    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
-    await openParcels()
+    expect(sidebar()).toHaveAttribute('data-open', 'false')
+    await userEvent.click(screen.getByRole('button', { name: 'Open menu' }))
+    expect(sidebar()).toHaveAttribute('data-open', 'true')
     await userEvent.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
+    expect(sidebar()).toHaveAttribute('data-open', 'false')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open menu' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Close menu' }))
+    expect(sidebar()).toHaveAttribute('data-open', 'false')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open menu' }))
+    await userEvent.click(await inList(B.upi))
+    expect(sidebar()).toHaveAttribute('data-open', 'false')
   })
 
   it('opens a parcel picked on the map', async () => {
@@ -157,26 +166,21 @@ describe('Dashboard', () => {
     expect(await screen.findByRole('heading', { name: B.upi })).toBeInTheDocument()
   })
 
-  it('closes the sheet and clears the selection', async () => {
+  it('goes back to the overview and clears the selection', async () => {
     renderDashboard(`/?upi=${A.upi}`)
     await screen.findByRole('heading', { name: A.upi })
-    await userEvent.click(screen.getByRole('button', { name: 'Close parcel' }))
-    expect(screen.queryByRole('complementary', { name: 'Parcel analysis' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Overview' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Back to overview' }))
+    noReport()
+    expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument()
     expect(selectedInUrl()).toBeNull()
     expect(screen.getByText(PROMPT)).toBeInTheDocument()
     expect(screen.getByLabelText('UPI')).toHaveValue('')
   })
 
-  it('widens and narrows the sheet', async () => {
-    renderDashboard(`/?upi=${A.upi}`)
-    await screen.findByRole('heading', { name: A.upi })
-    await userEvent.click(screen.getByRole('button', { name: 'Widen' }))
-    expect(screen.getByRole('button', { name: 'Narrow' })).toBeInTheDocument()
-  })
-
   it('says when the parcel has not been analysed, with no chart', async () => {
     renderDashboard('/?upi=5/05/10/02/1')
-    expect(await within(sheet()).findByText('This parcel has not been analysed yet.')).toBeInTheDocument()
+    expect(await within(report()).findByText('This parcel has not been analysed yet.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Index history' })).toBeNull()
     expect(window.localStorage.getItem('crophealth-history')).toBeNull()
   })
@@ -184,7 +188,7 @@ describe('Dashboard', () => {
   it('shows the format message for a malformed UPI in the link and requests nothing', async () => {
     renderDashboard('/?upi=abc')
     expect(screen.getByRole('alert')).toHaveTextContent('Enter a UPI in the form 5/05/10/02/1939')
-    expect(screen.queryByRole('complementary', { name: 'Parcel analysis' })).toBeNull()
+    noReport()
     await waitFor(() => expect(listParcels).toHaveBeenCalled())
     expect(getParcel).not.toHaveBeenCalled()
   })
