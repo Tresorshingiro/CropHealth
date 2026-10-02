@@ -14,6 +14,14 @@ export default defineConfig({
           setupFiles: ['./src/test/setup.js'],
         },
       },
+      {
+        extends: true,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: ['server/**/*.test.js'],
+        },
+      },
     ],
   },
 })
