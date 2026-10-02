@@ -58,7 +58,13 @@ body {
   }
 }
 
-/* The attribution line belongs to the map; keep it quiet under the panels. */
-.esri-attribution {
+/* The attribution line belongs to the map. Give it the app's colours in both
+   themes; the SDK's own stylesheet leaves it white in dark mode. */
+.esri-view .esri-attribution {
+  background-color: rgb(var(--surface) / 0.85);
+  color: rgb(var(--ink-2));
   @apply text-[10px];
+}
+.esri-view .esri-attribution a {
+  color: inherit;
 }

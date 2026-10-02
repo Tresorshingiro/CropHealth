@@ -13,14 +13,17 @@ import { useTheme } from '../theme/ThemeContext.jsx'
 const SENTINEL_URL = 'https://sentinel.arcgis.com/arcgis/rest/services/Sentinel2/ImageServer'
 const WORLD_IMAGERY_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'
 
-// Raster function names as published by the Sentinel-2 image service. The
-// index renderings are slightly see-through so the land underneath stays
-// readable; natural colour is drawn solid.
+// "Satellite" is the high-resolution basemap alone: the sharpest view of where
+// a parcel is, though the picture can be years old. The other three are recent
+// Sentinel-2 renderings (raster function names as the image service publishes
+// them), drawn solid over it; blending them with the basemap made both hard to read.
 const MODES = [
-  { id: 'ndvi', label: 'NDVI', functionName: 'NDVI Colormap', opacity: 0.7 },
-  { id: 'ndmi', label: 'NDMI', functionName: 'NDMI Colorized', opacity: 0.7 },
-  { id: 'natural', label: 'Natural colour', functionName: 'Natural Color with DRA', opacity: 1 },
+  { id: 'satellite', label: 'Satellite', title: 'High-resolution satellite image', functionName: null },
+  { id: 'recent', label: 'Recent', title: 'Latest Sentinel-2 image, natural colour', functionName: 'Natural Color with DRA' },
+  { id: 'ndvi', label: 'NDVI', title: 'Sentinel-2 NDVI', functionName: 'NDVI Colormap' },
+  { id: 'ndmi', label: 'NDMI', title: 'Sentinel-2 NDMI', functionName: 'NDMI Colorized' },
 ]
+const FIRST_SENTINEL = MODES.find((m) => m.functionName).functionName
 
 const RWANDA_EXTENT = { xmin: 28.84, ymin: -2.86, xmax: 30.91, ymax: -1.04, spatialReference: { wkid: 4326 } }
 
@@ -54,7 +57,7 @@ export default function ParcelMap({ parcels, selected, onSelect, padding, contro
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const onSelectRef = useRef(onSelect)
-  const [mode, setMode] = useState('ndvi')
+  const [mode, setMode] = useState(MODES[0].id)
   const { theme } = useTheme()
   const { top = 0, right = 0, bottom = 0, left = 0 } = padding || {}
 
@@ -82,8 +85,9 @@ export default function ParcelMap({ parcels, selected, onSelect, padding, contro
   useEffect(() => {
     const imagery = new ImageryLayer({
       url: SENTINEL_URL,
-      rasterFunction: { functionName: MODES[0].functionName },
-      opacity: MODES[0].opacity,
+      rasterFunction: { functionName: FIRST_SENTINEL },
+      // Hidden until a Sentinel-2 mode is chosen, so nothing is requested for it.
+      visible: false,
       format: 'jpgpng',
     })
     const parcelLayer = new GraphicsLayer()
@@ -152,8 +156,8 @@ export default function ParcelMap({ parcels, selected, onSelect, padding, contro
     const map = mapRef.current
     if (!map) return
     const next = MODES.find((m) => m.id === mode)
-    map.imagery.rasterFunction = { functionName: next.functionName }
-    map.imagery.opacity = next.opacity
+    if (next.functionName) map.imagery.rasterFunction = { functionName: next.functionName }
+    map.imagery.visible = Boolean(next.functionName)
   }, [mode])
 
   const zoomBy = (delta) => {
@@ -184,6 +188,7 @@ export default function ParcelMap({ parcels, selected, onSelect, padding, contro
               key={m.id}
               type="button"
               aria-pressed={mode === m.id}
+              title={m.title}
               onClick={() => setMode(m.id)}
               className={`rounded-full px-3 py-1.5 font-medium transition ${
                 mode === m.id ? 'bg-accent text-accent-ink' : 'text-ink-2 hover:bg-raised hover:text-ink'
