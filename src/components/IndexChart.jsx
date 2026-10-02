@@ -4,7 +4,6 @@ import { formatDate, formatIndex, formatMonth } from '../lib/format.js'
 import { CHART_COLORS, SERIES } from '../theme/palette.js'
 import { useTheme } from '../theme/ThemeContext.jsx'
 
-const SUBTITLE = SERIES.map((s) => `${s.code} ${s.hint}`).join(' · ')
 
 function Lines({ observations, colors }) {
   const tick = { fill: colors.text, fontSize: 12 }
@@ -24,6 +23,8 @@ function Lines({ observations, colors }) {
           minTickGap={48}
         />
         <YAxis
+          // Round the range out to the nearest 0.2 so the ticks land on clean values.
+          domain={[(min) => Math.floor(min * 5) / 5, (max) => Math.ceil(max * 5) / 5]}
           tickFormatter={(value) => value.toFixed(1)}
           tick={tick}
           tickLine={false}
@@ -31,6 +32,8 @@ function Lines({ observations, colors }) {
           width={40}
         />
         <Tooltip
+          // A missing index is listed as a dash, not left out.
+          filterNull={false}
           labelFormatter={formatDate}
           formatter={(value) => formatIndex(value)}
           cursor={{ stroke: colors.axis, strokeWidth: 1 }}
@@ -110,7 +113,7 @@ export default function IndexChart({ status, observations, error, onRetry }) {
   if (status === 'idle') {
     body = <p className="text-sm text-ink-2">Select a parcel to see its history.</p>
   } else if (status === 'loading') {
-    body = <div role="status" aria-label="Loading history" className="h-64 animate-pulse rounded-lg bg-raised" />
+    body = <div role="status" aria-label="Loading history" className="h-64 animate-pulse rounded-lg bg-raised motion-reduce:animate-none" />
   } else if (status === 'error') {
     body = (
       <div>
@@ -135,14 +138,14 @@ export default function IndexChart({ status, observations, error, onRetry }) {
   }
 
   return (
-    <section className="panel p-4" aria-labelledby="chart-title">
+    <section aria-labelledby="chart-title">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 id="chart-title" className="text-sm font-semibold">
+          <h2 id="chart-title" className="font-display text-sm font-semibold">
             Index history
           </h2>
           <p className="text-xs text-ink-2">
-            {hasRows ? `${observations.length} clear dates · ${SUBTITLE}` : SUBTITLE}
+            {hasRows ? `${observations.length} clear ${observations.length === 1 ? 'date' : 'dates'}` : 'Clear Sentinel-2 dates'}
           </p>
         </div>
         {hasRows && (

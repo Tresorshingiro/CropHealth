@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,8 +21,13 @@ vi.mock('../auth/AuthContext.jsx', () => ({
 }))
 
 vi.mock('../components/ParcelMap.jsx', () => ({
-  default: ({ parcels, selected }) => (
-    <div data-testid="map">{`${parcels.length} outlines, selected ${selected?.upi ?? 'none'}`}</div>
+  default: ({ parcels, selected, onSelect }) => (
+    <div data-testid="map">
+      {`${parcels.length} outlines, selected ${selected?.upi ?? 'none'}`}
+      <button type="button" onClick={() => onSelect('5/02/06/06/1702')}>
+        map parcel
+      </button>
+    </div>
   ),
 }))
 
@@ -52,6 +57,15 @@ const A = parcel('5/05/10/02/1939', 'Kirehe')
 const B = parcel('5/02/06/06/1702', 'Nyagatare')
 const row = (p) => ({ upi: p.upi, district: p.district, ndviLevel: p.ndviLevel, latestDate: p.latestDate, rings: p.rings })
 const OBSERVATIONS = [{ date: 1754265600000, ndvi: 0.39, ndmi: -0.09, ndre: 0.24, clearShare: 1 }]
+const GUIDE = [
+  {
+    code: 'NDVI',
+    name: 'Normalized Difference Vegetation Index',
+    meaning: 'How much green leaf is on the ground.',
+    thresholds: 'below 0.20 bare; 0.20-0.35 very sparse; 0.35-0.55 growing; 0.55-0.75 full canopy; above 0.75 dense',
+  },
+]
+const PROMPT = 'Search a UPI, pick a parcel on the map, or open the list.'
 
 function Search() {
   return <output data-testid="search">{useLocation().search}</output>
@@ -70,30 +84,34 @@ function renderDashboard(initial = '/') {
   )
 }
 
-const title = (p) => `${p.upi} · ${p.district}`
+const sheet = () => screen.getByRole('complementary', { name: 'Parcel analysis' })
+const openParcels = () => userEvent.click(screen.getByRole('button', { name: 'Analysed parcels' }))
 
 beforeEach(() => {
   for (const fn of [getParcel, getObservations, listParcels, getIndexGuide, expire, signOut]) fn.mockReset()
   getParcel.mockImplementation(async (upi) => [A, B].find((p) => p.upi === upi) ?? null)
   getObservations.mockResolvedValue(OBSERVATIONS)
   listParcels.mockResolvedValue({ parcels: [row(A), row(B)], truncated: false })
+  getIndexGuide.mockResolvedValue(GUIDE)
 })
 
 describe('Dashboard', () => {
-  it('starts with a prompt, the parcels table and the user name', async () => {
+  it('starts with the map, a prompt and no parcel sheet', async () => {
     renderDashboard()
     expect(screen.getByText('Tresor S')).toBeInTheDocument()
-    expect(screen.getByText('Enter a UPI and press Run to see its analysis.')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: B.upi })).toBeInTheDocument()
-    expect(await screen.findByTestId('map')).toHaveTextContent('2 outlines, selected none')
+    expect(screen.getByText(PROMPT)).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Parcel analysis' })).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('map')).toHaveTextContent('2 outlines, selected none'))
     expect(getParcel).not.toHaveBeenCalled()
   })
 
-  it('opens the parcel named in the link and remembers it in history', async () => {
+  it('opens the parcel named in the link in a sheet and remembers it in history', async () => {
     renderDashboard(`/?upi=${A.upi}`)
-    expect(await screen.findByRole('heading', { name: title(A) })).toBeInTheDocument()
+    expect(await within(sheet()).findByRole('heading', { name: A.upi })).toBeInTheDocument()
+    expect(within(sheet()).getByText('Kirehe')).toBeInTheDocument()
     expect(await screen.findByTestId('map')).toHaveTextContent(`selected ${A.upi}`)
-    expect(await screen.findByText(/1 clear dates/)).toBeInTheDocument()
+    expect(await within(sheet()).findByText('1 clear date')).toBeInTheDocument()
+    expect(screen.queryByText(PROMPT)).toBeNull()
     expect(JSON.parse(window.localStorage.getItem('crophealth-history'))).toEqual([A.upi])
     expect(screen.getByLabelText('UPI')).toHaveValue(A.upi)
   })
@@ -102,21 +120,72 @@ describe('Dashboard', () => {
     renderDashboard()
     await userEvent.type(screen.getByLabelText('UPI'), ` ${A.upi} `)
     await userEvent.click(screen.getByRole('button', { name: 'Run' }))
-    expect(await screen.findByRole('heading', { name: title(A) })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: A.upi })).toBeInTheDocument()
     expect(selectedInUrl()).toBe(A.upi)
+    expect(getParcel).toHaveBeenCalledTimes(1)
   })
 
-  it('says when the parcel has not been analysed, and leaves the chart idle', async () => {
+  it('draws the index scale from the guide', async () => {
+    renderDashboard(`/?upi=${A.upi}`)
+    expect(await screen.findByRole('img', { name: /^NDVI scale: bare, very sparse/ })).toBeInTheDocument()
+  })
+
+  it('opens a parcel from the list and closes the list', async () => {
+    renderDashboard()
+    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
+    await openParcels()
+    const drawer = screen.getByRole('dialog', { name: 'Analysed parcels' })
+    await userEvent.click(await within(drawer).findByRole('button', { name: B.upi }))
+    expect(await screen.findByRole('heading', { name: B.upi })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
+    expect(selectedInUrl()).toBe(B.upi)
+  })
+
+  it('closes the parcels list with its close button and with Escape', async () => {
+    renderDashboard()
+    await openParcels()
+    await userEvent.click(screen.getByRole('button', { name: 'Close list' }))
+    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
+    await openParcels()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Analysed parcels' })).toBeNull()
+  })
+
+  it('opens a parcel picked on the map', async () => {
+    renderDashboard()
+    await userEvent.click(await screen.findByRole('button', { name: 'map parcel' }))
+    expect(await screen.findByRole('heading', { name: B.upi })).toBeInTheDocument()
+  })
+
+  it('closes the sheet and clears the selection', async () => {
+    renderDashboard(`/?upi=${A.upi}`)
+    await screen.findByRole('heading', { name: A.upi })
+    await userEvent.click(screen.getByRole('button', { name: 'Close parcel' }))
+    expect(screen.queryByRole('complementary', { name: 'Parcel analysis' })).toBeNull()
+    expect(selectedInUrl()).toBeNull()
+    expect(screen.getByText(PROMPT)).toBeInTheDocument()
+    expect(screen.getByLabelText('UPI')).toHaveValue('')
+  })
+
+  it('widens and narrows the sheet', async () => {
+    renderDashboard(`/?upi=${A.upi}`)
+    await screen.findByRole('heading', { name: A.upi })
+    await userEvent.click(screen.getByRole('button', { name: 'Widen' }))
+    expect(screen.getByRole('button', { name: 'Narrow' })).toBeInTheDocument()
+  })
+
+  it('says when the parcel has not been analysed, with no chart', async () => {
     renderDashboard('/?upi=5/05/10/02/1')
-    expect(await screen.findByText('This parcel has not been analysed yet.')).toBeInTheDocument()
-    expect(screen.getByText('Select a parcel to see its history.')).toBeInTheDocument()
+    expect(await within(sheet()).findByText('This parcel has not been analysed yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Index history' })).toBeNull()
     expect(window.localStorage.getItem('crophealth-history')).toBeNull()
   })
 
   it('shows the format message for a malformed UPI in the link and requests nothing', async () => {
     renderDashboard('/?upi=abc')
     expect(screen.getByRole('alert')).toHaveTextContent('Enter a UPI in the form 5/05/10/02/1939')
-    await screen.findByRole('button', { name: B.upi })
+    expect(screen.queryByRole('complementary', { name: 'Parcel analysis' })).toBeNull()
+    await waitFor(() => expect(listParcels).toHaveBeenCalled())
     expect(getParcel).not.toHaveBeenCalled()
   })
 
@@ -125,7 +194,7 @@ describe('Dashboard', () => {
     renderDashboard(`/?upi=${A.upi}`)
     expect(await screen.findByText('Could not reach GeoHub. Try again in a moment.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByRole('heading', { name: title(A) })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: A.upi })).toBeInTheDocument()
   })
 
   it('signs the user out of the page when the session has expired', async () => {
@@ -141,25 +210,21 @@ describe('Dashboard', () => {
       upi === A.upi ? new Promise((resolve) => (finishA = resolve)) : Promise.resolve(B),
     )
     renderDashboard(`/?upi=${A.upi}`)
-    await userEvent.click(await screen.findByRole('button', { name: B.upi }))
-    expect(await screen.findByRole('heading', { name: title(B) })).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'map parcel' }))
+    expect(await screen.findByRole('heading', { name: B.upi })).toBeInTheDocument()
 
     await act(async () => finishA(A))
-    expect(screen.getByRole('heading', { name: title(B) })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: title(A) })).toBeNull()
+    expect(screen.getByRole('heading', { name: B.upi })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: A.upi })).toBeNull()
     expect(selectedInUrl()).toBe(B.upi)
   })
 
-  it('opens the index guide from a card', async () => {
-    getIndexGuide.mockResolvedValue([
-      { code: 'NDVI', name: 'Normalized Difference Vegetation Index', meaning: 'How much green leaf is on the ground.' },
-    ])
+  it('still shows the parcel when the index guide cannot be loaded', async () => {
+    getIndexGuide.mockRejectedValue(new PortalError('Invalid query'))
     renderDashboard(`/?upi=${A.upi}`)
-    await userEvent.click(await screen.findByRole('button', { name: 'About NDVI' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Normalized Difference Vegetation Index' })
-    expect(dialog).toHaveTextContent('How much green leaf is on the ground.')
-    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(await screen.findByRole('heading', { name: A.upi })).toBeInTheDocument()
+    expect(screen.getByTestId('NDVI-value')).toHaveTextContent('0.14')
+    expect(screen.queryByRole('img', { name: /^NDVI scale/ })).toBeNull()
   })
 
   it('signs out from the header', async () => {

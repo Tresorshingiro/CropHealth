@@ -174,6 +174,35 @@ the original location after sign-in.
 
 ### Dashboard
 
+> **Superseded layout (2026-10-02, later the same day).** The first build
+> followed the grid described below and read as an Esri dashboard. It was
+> redesigned as "map as the canvas"; the content of each area is unchanged,
+> but the arrangement is now:
+>
+> - The map fills the window. Everything else floats over it.
+> - A search pill (top left) holds the parcels-list button, the UPI field and
+>   Run. Focusing the field offers the recent parcels, replacing the History
+>   tab.
+> - A pill (top right) holds the app name, the user's name, the theme toggle
+>   and Sign out.
+> - Zoom and the imagery switcher sit bottom left. The NDVI and NDMI
+>   renderings are drawn at 70% opacity so the satellite basemap shows
+>   through.
+> - The analysed-parcels table opens in a drawer from the left, with a filter
+>   box. Choosing a parcel closes it.
+> - A selected parcel opens a report sheet: on the right on wide screens
+>   (it can be widened), rising from the bottom on phones. The map centres
+>   the parcel in the part the sheet does not cover. Closing the sheet clears
+>   the selection.
+> - In the sheet each index is a meter: the value, a scale split into the
+>   bands of the `IndexGuide` thresholds with a marker at the value, and the
+>   level from the layer. If the thresholds cannot be read, the scale is left
+>   out. The explanation opens in place, not in a dialog.
+> - With nothing selected, the map frames the analysed parcels once they load.
+> - Type: Archivo for headings and numbers, Inter for text, bundled with the
+>   app. Sign-in page: form beside a public satellite view of the irrigation
+>   circles at Nasho.
+
 Laid out like the existing dashboard: header on top; a row with the search
 panel, the map and the result panel; a row with the parcels table and the
 chart. On narrow screens the areas stack in one column.

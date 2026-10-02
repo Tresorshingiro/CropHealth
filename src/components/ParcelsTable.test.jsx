@@ -62,6 +62,23 @@ describe('ParcelsTable', () => {
     expect(screen.getByRole('button', { name: '5/05/10/02/2206' }).closest('tr')).not.toHaveAttribute('aria-current')
   })
 
+  it('filters by UPI, district or level', async () => {
+    renderTable()
+    const filter = screen.getByLabelText('Filter parcels')
+    await userEvent.type(filter, 'kay')
+    expect(column(0)).toEqual(['5/04/08/04/1948'])
+    await userEvent.clear(filter)
+    await userEvent.type(filter, ' SPARSE ')
+    expect(column(0)).toEqual(['5/02/06/06/1702'])
+    await userEvent.clear(filter)
+    await userEvent.type(filter, '10/02')
+    expect(column(0)).toEqual(['5/05/10/02/2206'])
+    await userEvent.clear(filter)
+    await userEvent.type(filter, 'zzz')
+    expect(screen.getByText('No parcels match.')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
   it('says when the list was cut short', () => {
     renderTable({ truncated: true })
     expect(screen.getByText('Showing the first 3 parcels. Search by UPI to open any other.')).toBeInTheDocument()

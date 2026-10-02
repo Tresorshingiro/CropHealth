@@ -2,18 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Values are RGB triplets so Tailwind can apply opacity. */
 :root {
   color-scheme: light;
-  --page: 249 249 247;
-  --surface: 252 252 251;
-  --raised: 240 239 236;
-  --line: 225 224 217;
-  --ink: 11 11 11;
-  --ink-2: 82 81 78;
+  --page: 251 250 247;
+  --surface: 255 255 255;
+  --raised: 242 240 235;
+  --line: 228 225 218;
+  --ink: 18 16 14;
+  --ink-2: 84 80 74;
   --muted: 137 135 129;
   --accent: 15 122 77;
   --accent-ink: 255 255 255;
-  --danger: 208 59 59;
+  --danger: 196 48 48;
 }
 
 .dark {
@@ -31,21 +32,33 @@
 }
 
 body {
-  @apply bg-page text-ink antialiased;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  @apply bg-page font-sans text-ink antialiased;
 }
 
 @layer components {
+  /* Panels that float over the map: mostly solid so text stays readable,
+     with a little of the imagery showing through the blur. */
+  .glass {
+    @apply border border-line/60 bg-surface/90 backdrop-blur-xl;
+  }
   .panel {
-    @apply rounded-xl border border-line bg-surface;
+    @apply rounded-2xl border border-line bg-surface;
   }
   .btn-primary {
     @apply inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-md border border-line px-3 py-1.5 text-sm text-ink-2 transition hover:bg-raised hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+    @apply inline-flex items-center justify-center rounded-full border border-line px-3 py-1.5 text-sm text-ink-2 transition hover:bg-raised hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+  }
+  .icon-btn {
+    @apply grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-2 transition hover:bg-raised hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
   }
   .field {
-    @apply w-full rounded-md border border-line bg-page px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none;
+    @apply w-full rounded-xl border border-line bg-page px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none;
   }
+}
+
+/* The attribution line belongs to the map; keep it quiet under the panels. */
+.esri-attribution {
+  @apply text-[10px];
 }

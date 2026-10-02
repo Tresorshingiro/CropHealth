@@ -1,8 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '../theme/ThemeContext.jsx'
-import IndexGuideDialog from './IndexGuideDialog.jsx'
 import ParcelSummary from './ParcelSummary.jsx'
 
 const PARCEL = {
@@ -27,21 +26,49 @@ const PARCEL = {
   rings: null,
 }
 
+const ENTRIES = [
+  {
+    code: 'NDVI',
+    name: 'Normalized Difference Vegetation Index',
+    meaning: 'How much green leaf is on the ground.',
+    howToRead: 'Rises as a crop covers the soil and falls at harvest.',
+    thresholds: 'below 0.20 bare; 0.20-0.35 very sparse; 0.35-0.55 growing; 0.55-0.75 full canopy; above 0.75 dense',
+    caveats: 'A parcel is often only a few 10 m pixels.',
+    formula: '(B8 - B4) / (B8 + B4)',
+    bands: 'B8 near infrared, B4 red',
+    reference: 'Rouse et al. 1974',
+  },
+  {
+    code: 'NDMI',
+    name: 'Normalized Difference Moisture Index',
+    meaning: 'How much water the leaves and the soil surface hold.',
+    howToRead: 'Falls days before NDVI does.',
+    thresholds: 'not a list of bands',
+    caveats: null,
+    formula: null,
+    bands: null,
+    reference: null,
+  },
+]
+
 const noop = () => {}
+const READY_GUIDE = { entries: ENTRIES, error: null }
 
 function renderSummary(props) {
   return render(
     <ThemeProvider>
-      <ParcelSummary onRetry={noop} onOpenGuide={noop} parcel={null} error={null} {...props} />
+      <ParcelSummary onRetry={noop} parcel={null} error={null} guide={{ entries: null, error: null }} {...props} />
     </ThemeProvider>,
   )
 }
 
 describe('ParcelSummary', () => {
-  it('shows the parcel, its location, the three indices and the facts', () => {
-    renderSummary({ status: 'ready', parcel: PARCEL })
-    expect(screen.getByRole('heading', { name: '5/05/10/02/1939 · Kirehe' })).toBeInTheDocument()
+  it('shows the parcel, its location, the headline, the three indices and the facts', () => {
+    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
+    expect(screen.getByRole('heading', { name: '5/05/10/02/1939' })).toBeInTheDocument()
+    expect(screen.getByText('Kirehe')).toBeInTheDocument()
     expect(screen.getByText('Nasho · Kagese · Kagese Ii')).toBeInTheDocument()
+    expect(screen.getByText(PARCEL.headline)).toBeInTheDocument()
     expect(screen.getByTestId('NDVI-value')).toHaveTextContent('0.14')
     expect(screen.getByTestId('NDVI-level')).toHaveTextContent('bare ground')
     expect(screen.getByTestId('NDMI-value')).toHaveTextContent('-0.30')
@@ -52,12 +79,31 @@ describe('ParcelSummary', () => {
     expect(screen.getByText('1.85 ha')).toBeInTheDocument()
     expect(screen.getByText('good')).toBeInTheDocument()
     expect(screen.getByText('87')).toBeInTheDocument()
-    expect(screen.getByText(PARCEL.headline)).toBeInTheDocument()
   })
 
-  it('shows a dash and no level for an index with no value', () => {
+  it('draws a scale from the guide thresholds and marks the band the value falls in', () => {
+    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
+    const scale = screen.getByRole('img', { name: 'NDVI scale: bare, very sparse, growing, full canopy, dense. This parcel: bare.' })
+    const bands = within(scale).getAllByTestId('band')
+    expect(bands).toHaveLength(5)
+    expect(bands.map((b) => b.dataset.active)).toEqual(['true', 'false', 'false', 'false', 'false'])
+    expect(within(scale).getByTestId('marker')).toBeInTheDocument()
+    expect(within(scale).getByText('0.2')).toBeInTheDocument()
+    expect(within(scale).getByText('0.75')).toBeInTheDocument()
+  })
+
+  it('shows value and level without a scale when the thresholds cannot be read or the guide is missing', () => {
+    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
+    expect(screen.queryByRole('img', { name: /^NDMI scale/ })).toBeNull()
+    expect(screen.queryByRole('img', { name: /^NDRE scale/ })).toBeNull()
+    expect(screen.getByTestId('NDMI-value')).toHaveTextContent('-0.30')
+    expect(screen.getByTestId('NDRE-level')).toHaveTextContent('very little chlorophyll')
+  })
+
+  it('shows a dash, no level and no marker for an index with no value', () => {
     const { container } = renderSummary({
       status: 'ready',
+      guide: READY_GUIDE,
       parcel: {
         ...PARCEL,
         district: null,
@@ -75,13 +121,39 @@ describe('ParcelSummary', () => {
     expect(screen.getByRole('heading', { name: '5/05/10/02/1939' })).toBeInTheDocument()
     expect(screen.getByTestId('NDVI-value')).toHaveTextContent('–')
     expect(screen.getByTestId('NDVI-level')).toBeEmptyDOMElement()
+    expect(screen.queryByTestId('marker')).toBeNull()
     expect(screen.getByTestId('NDMI-value')).toHaveTextContent('-0.30')
     expect(container.textContent).not.toMatch(/NaN|null|undefined|Invalid/)
   })
 
-  it('prompts for a UPI before anything is selected', () => {
-    renderSummary({ status: 'idle' })
-    expect(screen.getByText('Enter a UPI and press Run to see its analysis.')).toBeInTheDocument()
+  it('explains an index in place when its info button is pressed', async () => {
+    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
+    const button = screen.getByRole('button', { name: 'About NDVI' })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('How much green leaf is on the ground.')).toBeNull()
+    await userEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('How much green leaf is on the ground.')).toBeInTheDocument()
+    expect(screen.getByText('A parcel is often only a few 10 m pixels.')).toBeInTheDocument()
+    expect(screen.getByText('(B8 - B4) / (B8 + B4) · B8 near infrared, B4 red')).toBeInTheDocument()
+    await userEvent.click(button)
+    expect(screen.queryByText('How much green leaf is on the ground.')).toBeNull()
+  })
+
+  it('says so when the explanation is loading, failed, or missing', async () => {
+    const { rerender } = renderSummary({ status: 'ready', parcel: PARCEL })
+    await userEvent.click(screen.getByRole('button', { name: 'About NDRE' }))
+    expect(screen.getByText('Loading the explanation…')).toBeInTheDocument()
+
+    const withGuide = (guide) => (
+      <ThemeProvider>
+        <ParcelSummary status="ready" parcel={PARCEL} error={null} onRetry={noop} guide={guide} />
+      </ThemeProvider>
+    )
+    rerender(withGuide({ entries: null, error: 'Invalid query' }))
+    expect(screen.getByText('The explanation could not be loaded.')).toBeInTheDocument()
+    rerender(withGuide(READY_GUIDE))
+    expect(screen.getByText('No explanation is available for NDRE.')).toBeInTheDocument()
   })
 
   it('shows a loading state', () => {
@@ -100,57 +172,5 @@ describe('ParcelSummary', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Could not reach GeoHub. Try again in a moment.')
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetry).toHaveBeenCalledTimes(1)
-  })
-
-  it('opens the guide for the index whose info button was pressed', async () => {
-    const onOpenGuide = vi.fn()
-    renderSummary({ status: 'ready', parcel: PARCEL, onOpenGuide })
-    await userEvent.click(screen.getByRole('button', { name: 'About NDMI' }))
-    expect(onOpenGuide).toHaveBeenCalledWith('NDMI')
-  })
-})
-
-describe('IndexGuideDialog', () => {
-  const ENTRIES = [
-    {
-      code: 'NDVI',
-      name: 'Normalized Difference Vegetation Index',
-      meaning: 'How much green leaf is on the ground.',
-      howToRead: 'Rises as a crop covers the soil and falls at harvest.',
-      thresholds: 'below 0.20 bare; 0.20-0.35 very sparse',
-      caveats: 'A parcel is often only a few 10 m pixels.',
-      formula: '(B8 - B4) / (B8 + B4)',
-      bands: 'B8 near infrared, B4 red',
-      reference: 'Rouse et al. 1974',
-    },
-  ]
-
-  it('shows the guide entry for the index', () => {
-    render(<IndexGuideDialog code="NDVI" entries={ENTRIES} error={null} onClose={noop} />)
-    const dialog = screen.getByRole('dialog', { name: 'Normalized Difference Vegetation Index' })
-    expect(dialog).toHaveTextContent('How much green leaf is on the ground.')
-    expect(dialog).toHaveTextContent('below 0.20 bare; 0.20-0.35 very sparse')
-    expect(dialog).toHaveTextContent('A parcel is often only a few 10 m pixels.')
-    expect(dialog).toHaveTextContent('(B8 - B4) / (B8 + B4)')
-  })
-
-  it('shows a loading state while the guide is being fetched', () => {
-    render(<IndexGuideDialog code="NDVI" entries={null} error={null} onClose={noop} />)
-    expect(screen.getByRole('status')).toHaveTextContent('Loading…')
-  })
-
-  it('shows an error, and a note when the index has no entry', () => {
-    const { rerender } = render(<IndexGuideDialog code="NDVI" entries={null} error="Invalid query" onClose={noop} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Invalid query')
-    rerender(<IndexGuideDialog code="NDRE" entries={ENTRIES} error={null} onClose={noop} />)
-    expect(screen.getByText('No guide entry for NDRE.')).toBeInTheDocument()
-  })
-
-  it('closes on Escape and on the close button', async () => {
-    const onClose = vi.fn()
-    render(<IndexGuideDialog code="NDVI" entries={ENTRIES} error={null} onClose={onClose} />)
-    await userEvent.keyboard('{Escape}')
-    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onClose).toHaveBeenCalledTimes(2)
   })
 })

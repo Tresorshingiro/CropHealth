@@ -4,7 +4,7 @@ export default function ThemeToggle() {
   const { theme, toggle } = useTheme()
   const next = theme === 'dark' ? 'light' : 'dark'
   return (
-    <button type="button" className="btn-ghost" onClick={toggle} aria-label={`Switch to ${next} theme`}>
+    <button type="button" className="icon-btn" title={`Switch to ${next} theme`} onClick={toggle} aria-label={`Switch to ${next} theme`}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {theme === 'dark' ? (
           <>
