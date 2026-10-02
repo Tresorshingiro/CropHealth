@@ -5,7 +5,15 @@ import { useAuth } from './AuthContext.jsx'
 
 /** Only a path on this site may be followed after sign-in. */
 export function safeNext(next) {
-  return typeof next === 'string' && /^\/(?![/\\])/.test(next) ? next : '/'
+  // Browsers strip tabs and newlines and read `\` as `/`, so `/\t/host` and
+  // `/\host` would both leave this site. Refuse them before resolving.
+  if (typeof next !== 'string' || !next.startsWith('/') || /[\u0000-\u001f\\]/.test(next)) return '/'
+  try {
+    const url = new URL(next, window.location.origin)
+    return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : '/'
+  } catch {
+    return '/'
+  }
 }
 
 export default function LoginPage() {

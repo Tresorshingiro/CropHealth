@@ -64,9 +64,15 @@ export default function ParcelsTable({ status, parcels, truncated, selectedUpi, 
               {rows.map((parcel) => {
                 const selected = parcel.upi === selectedUpi
                 return (
-                  <tr key={parcel.upi} aria-current={selected ? 'true' : undefined} className={selected ? 'bg-raised' : 'hover:bg-raised/60'}>
+                  <tr
+                    key={parcel.upi}
+                    aria-current={selected ? 'true' : undefined}
+                    onClick={() => onSelect(parcel.upi)}
+                    className={`cursor-pointer ${selected ? 'bg-raised' : 'hover:bg-raised/60'}`}
+                  >
                     <td className="py-1.5 pr-3" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      <button type="button" className="text-left hover:underline" onClick={() => onSelect(parcel.upi)}>
+                      {/* The button is for keyboard use; its click reaches the row's handler. */}
+                      <button type="button" className="text-left hover:underline">
                         {parcel.upi}
                       </button>
                     </td>

@@ -10,6 +10,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createAccessMiddleware, readConfig } from './access-server.js'
+import { createStaticHandler } from './static.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
@@ -37,48 +38,21 @@ if (!fs.existsSync(DIST)) {
   process.exit(1)
 }
 
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.wasm': 'application/wasm',
-}
-
-function serveStatic(req, res) {
-  const url = new URL(req.url, 'http://localhost')
-  let rel
-  try {
-    rel = decodeURIComponent(url.pathname)
-  } catch {
-    res.statusCode = 400
-    return res.end('Bad request')
-  }
-  const filePath = path.resolve(DIST, `.${rel}`)
-  if (filePath !== DIST && !filePath.startsWith(DIST + path.sep)) {
-    res.statusCode = 403
-    return res.end('Forbidden')
-  }
-  // Client-side routes (/login, /?upi=...) fall back to index.html.
-  const isFile = fs.existsSync(filePath) && fs.statSync(filePath).isFile()
-  const target = isFile ? filePath : path.join(DIST, 'index.html')
-  res.setHeader('Content-Type', TYPES[path.extname(target)] || 'application/octet-stream')
-  // Only Vite's hashed output is safe to cache forever.
-  const hashed = target.startsWith(path.join(DIST, 'assets') + path.sep)
-  res.setHeader('Cache-Control', hashed ? 'public, max-age=31536000, immutable' : 'no-cache')
-  fs.createReadStream(target).pipe(res)
-}
-
 const middleware = createAccessMiddleware(readConfig())
+const serveStatic = createStaticHandler(DIST)
 const PORT = Number(process.env.PORT || 4173)
 
-const server = http.createServer((req, res) => middleware(req, res, () => serveStatic(req, res)))
+const server = http.createServer((req, res) =>
+  middleware(req, res, () => {
+    try {
+      serveStatic(req, res)
+    } catch (err) {
+      console.error(`Static request failed: ${err.message}`)
+      if (!res.headersSent) res.statusCode = 500
+      res.end()
+    }
+  }),
+)
 
 server.on('error', (err) => {
   console.error(

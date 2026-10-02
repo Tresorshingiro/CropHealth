@@ -56,7 +56,22 @@ describe('safeNext', () => {
     expect(safeNext('/')).toBe('/')
   })
 
-  it.each(['//evil.example/x', 'https://evil.example', '/\\evil.example', 'javascript:alert(1)', '', null, undefined])(
+  it('keeps the path, query and hash of a link on this site', () => {
+    expect(safeNext('/?upi=5/05/10/02/1939#chart')).toBe('/?upi=5/05/10/02/1939#chart')
+  })
+
+  it.each([
+    '//evil.example/x',
+    'https://evil.example',
+    '/\\evil.example',
+    '/\t/evil.example',
+    '/\n/evil.example',
+    '/ok\\path',
+    'javascript:alert(1)',
+    '',
+    null,
+    undefined,
+  ])(
     'replaces %s with the home page',
     (value) => {
       expect(safeNext(value)).toBe('/')

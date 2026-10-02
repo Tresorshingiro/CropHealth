@@ -29,13 +29,13 @@ function portal(url, init = {}) {
 
 let server
 
-async function start(upstream = portal) {
+async function start(upstream = portal, serverConfig = config) {
   const calls = []
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url: String(url), init })
     return upstream(String(url), init)
   }
-  const middleware = createAccessMiddleware(config, fetchImpl)
+  const middleware = createAccessMiddleware(serverConfig, fetchImpl)
   server = http.createServer((req, res) => middleware(req, res))
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   return { base: `http://127.0.0.1:${server.address().port}`, calls }
@@ -252,7 +252,7 @@ describe('service proxy', () => {
 
   it('refuses methods other than GET', async () => {
     const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({}))
-    const res = await fetch(`${base}${SERVICE}/0/applyEdits`, { method: 'POST', headers: { cookie }, body: 'f=json' })
+    const res = await fetch(`${base}${SERVICE}/0/query`, { method: 'POST', headers: { cookie }, body: 'f=json' })
     expect(res.status).toBe(405)
     expect(serviceCalls()).toHaveLength(0)
   })
@@ -282,5 +282,135 @@ describe('service proxy', () => {
     })
     const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
     expect(res.status).toBe(502)
+  })
+})
+
+describe('hardening', () => {
+  const SERVICE = '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer'
+  const isService = (url) => url.startsWith('https://portal.test/server/')
+
+  async function signedIn(service = () => jsonResponse({ features: [] })) {
+    const ctx = await start((url, init) => (isService(url) ? service(url, init) : portal(url, init)))
+    const cookie = cookieOf(await login(ctx.base, 'tresor', 'right'))
+    return { ...ctx, cookie, serviceCalls: () => ctx.calls.filter((c) => isService(c.url)) }
+  }
+
+  function rawGet(base, path, cookie) {
+    return new Promise((resolve, reject) => {
+      const { hostname, port } = new URL(base)
+      const req = http.request({ hostname, port, path, method: 'GET', headers: { cookie } }, (res) => {
+        res.resume()
+        res.on('end', () => resolve({ status: res.statusCode }))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
+  it('forwards only layer queries, not other paths inside the service', async () => {
+    const { base, cookie, serviceCalls } = await signedIn()
+    const paths = [
+      `${SERVICE}`,
+      `${SERVICE}/0`,
+      `${SERVICE}/3/query`,
+      `${SERVICE}/0/queryRelatedRecords`,
+      `${SERVICE}/..;/..;/Other/FeatureServer/0/query`,
+      `${SERVICE}/..%2f..%2fOther/FeatureServer/0/query`,
+      `${SERVICE}/..%5c..%5cOther/FeatureServer/0/query`,
+      `${SERVICE}/%252e%252e/%252e%252e/Other/FeatureServer/0/query`,
+      `${SERVICE}/0/query/..%2f..%2fadmin`,
+    ]
+    for (const path of paths) {
+      const res = await rawGet(base, path, cookie)
+      expect(res.status, path).toBe(404)
+    }
+    expect(serviceCalls()).toHaveLength(0)
+    for (const layer of [0, 1, 2]) {
+      const res = await rawGet(base, `${SERVICE}/${layer}/query?where=1%3D1`, cookie)
+      expect(res.status).toBe(200)
+    }
+    expect(serviceCalls()).toHaveLength(3)
+  })
+
+  it('drops token and callback parameters in any letter case and always asks for JSON', async () => {
+    const { base, cookie, serviceCalls } = await signedIn()
+    const res = await fetch(`${base}${SERVICE}/0/query?where=1%3D1&Token=EVIL&TOKEN=E2&callback=x&f=html`, {
+      headers: { cookie },
+    })
+    expect(res.headers.get('content-type')).toMatch(/^application\/json/)
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    const sent = new URL(serviceCalls()[0].url)
+    expect([...sent.searchParams.keys()].sort()).toEqual(['f', 'token', 'where'])
+    expect(sent.searchParams.get('token')).toBe('TOK')
+    expect(sent.searchParams.get('f')).toBe('json')
+  })
+
+  it('answers as JSON even when GeoHub sends HTML', async () => {
+    const { base, cookie } = await signedIn(
+      () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+    )
+    const res = await fetch(`${base}${SERVICE}/0/query`, { headers: { cookie } })
+    expect(res.status).toBe(502)
+    expect(res.headers.get('content-type')).toMatch(/^application\/json/)
+    expect(await res.json()).toEqual({ error: 'GeoHub could not answer the request.' })
+  })
+
+  it('does not expose the portal token in the cookie value', async () => {
+    const { base } = await start()
+    const value = cookieOf(await login(base, 'tresor', 'right')).split('=')[1]
+    for (const part of value.split('.')) {
+      expect(Buffer.from(part, 'base64url').toString()).not.toContain('TOK')
+      expect(Buffer.from(part, 'base64url').toString()).not.toContain('tresor')
+    }
+  })
+
+  it('rejects a cookie sealed with a different secret', async () => {
+    const other = readConfig({ PORTAL_URL: 'https://portal.test/portal', SESSION_SECRET: 'another-secret' })
+    const first = await start(portal, other)
+    const cookie = cookieOf(await login(first.base, 'tresor', 'right'))
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
+    const { base } = await start()
+    const res = await fetch(`${base}/api/auth/session`, { headers: { cookie } })
+    expect(await res.json()).toEqual({ authenticated: false })
+  })
+
+  it('marks the cookie Secure behind an HTTPS reverse proxy, even when Host is local', async () => {
+    const production = readConfig({
+      PORTAL_URL: 'https://portal.test/portal',
+      SESSION_SECRET: 'test-secret',
+      NODE_ENV: 'production',
+    })
+    const { base } = await start(portal, production)
+    const res = await fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-proto': 'https',
+        'x-forwarded-host': 'crophealth.example.rw',
+      },
+      body: JSON.stringify({ username: 'tresor', password: 'right' }),
+    })
+    expect(res.headers.get('set-cookie')).toMatch(/; Secure/)
+  })
+
+  it('leaves Secure off for a plain local run so sign-in works on localhost', async () => {
+    const production = readConfig({
+      PORTAL_URL: 'https://portal.test/portal',
+      SESSION_SECRET: 'test-secret',
+      NODE_ENV: 'production',
+    })
+    const { base } = await start(portal, production)
+    const res = await login(base, 'tresor', 'right')
+    expect(res.headers.get('set-cookie')).not.toMatch(/Secure/)
+  })
+
+  it('reports a portal outage as 502, not as wrong credentials', async () => {
+    const { base } = await start(
+      () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+    )
+    const res = await login(base, 'tresor', 'right')
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'Could not reach GeoHub. Try again in a moment.' })
   })
 })

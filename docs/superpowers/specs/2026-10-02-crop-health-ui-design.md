@@ -83,18 +83,20 @@ Routes:
 
 - `POST /api/auth/login`: body `{ username, password }`. Calls the portal's
   `generateToken` (or the OAuth password grant when `PORTAL_CLIENT_ID` and
-  `PORTAL_CLIENT_SECRET` are set). On success sets a signed, HttpOnly,
-  SameSite=Lax session cookie holding the token, user name and expiry, and
+  `PORTAL_CLIENT_SECRET` are set). On success sets an encrypted
+  (AES-256-GCM), HttpOnly, SameSite=Lax session cookie holding the token, user
+  name and expiry, and
   returns `{ authenticated: true, user }`. On failure returns 401 with the
   portal's own message, including its `details` (for example the lockout
   message).
 - `GET /api/auth/session`: returns `{ authenticated, user }`.
 - `POST /api/auth/logout`: clears the cookie.
-- `GET /api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/**`:
+- `GET /api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/{0,1,2}/query`:
   forwards to the ArcGIS Server with the session token attached and the
-  referer the token was bound to. Any `token` parameter sent by the browser is
-  dropped. Paths outside this one service get 404, so the proxy cannot be used
-  to reach anything else. Other methods get 405: the app only reads. With no
+  referer the token was bound to. Any `token`, `callback` or `f` parameter
+  sent by the browser is dropped and `f=json` is forced; the answer is always
+  served as JSON. Every other path gets 404, so the proxy cannot be used to
+  reach anything else. Other methods get 405: the app only reads. With no
   valid session it returns 401.
 
 Not carried over from Natural-resource: response body rewriting, the portal

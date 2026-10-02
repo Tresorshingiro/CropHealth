@@ -3,7 +3,7 @@
  *
  * The GeoHub services are private, so the browser cannot call them directly.
  * This middleware signs the user in to the portal, keeps the portal token in a
- * signed HttpOnly cookie, and (see the proxy route) forwards read-only queries
+ * encrypted HttpOnly cookie, and (see the proxy route) forwards read-only queries
  * to one feature service with that token attached. The browser never sees the
  * token.
  */
@@ -70,30 +70,36 @@ async function readJsonBody(req) {
  * referer at sign-in, so the proxy must present the same value later.
  */
 function requestOrigin(req) {
-  const proto = req.headers['x-forwarded-proto'] || (req.socket?.encrypted ? 'https' : 'http')
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost'
-  return `${proto}://${host}`
+  // A chain of proxies sends comma-separated values; the first is the client's.
+  const first = (value) => String(value || '').split(',')[0].trim()
+  const proto = first(req.headers['x-forwarded-proto']) || (req.socket?.encrypted ? 'https' : 'http')
+  const host = first(req.headers['x-forwarded-host']) || req.headers.host || 'localhost'
+  return `${proto === 'https' ? 'https' : 'http'}://${host}`
 }
 
 class PortalUnreachable extends Error {}
 
 export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
-  const hmac = (body) => crypto.createHmac('sha256', config.sessionSecret).update(body).digest('base64url')
+  // The cookie holds the portal token, so it is encrypted, not just signed:
+  // AES-256-GCM both hides the content and rejects anything altered or sealed
+  // with another secret.
+  const key = crypto.createHash('sha256').update(config.sessionSecret).digest()
 
-  function sign(payload) {
-    const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
-    return `${body}.${hmac(body)}`
+  function seal(payload) {
+    const iv = crypto.randomBytes(12)
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+    const data = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()])
+    return Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64url')
   }
 
-  function unsign(value) {
-    if (!value || !value.includes('.')) return null
-    const [body, sig] = value.split('.')
-    const given = Buffer.from(sig || '')
-    const expected = Buffer.from(hmac(body))
-    // Length check first: timingSafeEqual throws on mismatched lengths.
-    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null
+  function unseal(value) {
+    if (!value) return null
     try {
-      const data = JSON.parse(Buffer.from(body, 'base64url').toString())
+      const raw = Buffer.from(value, 'base64url')
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12))
+      decipher.setAuthTag(raw.subarray(12, 28))
+      const text = Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8')
+      const data = JSON.parse(text)
       if (!data.expiresAt || Date.now() > data.expiresAt) return null
       return data
     } catch {
@@ -101,15 +107,17 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
     }
   }
 
-  const readSession = (req) => unsign(parseCookies(req.headers.cookie)[COOKIE])
+  const readSession = (req) => unseal(parseCookies(req.headers.cookie)[COOKIE])
 
   function cookieHeader(req, value, maxAgeSec) {
     const flags = ['HttpOnly', 'Path=/', 'SameSite=Lax', `Max-Age=${maxAgeSec}`]
-    const host = String(req.headers.host || '').split(':')[0]
-    const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
-    // Browsers drop Secure cookies on an untrusted local certificate, and
-    // localhost is already a secure context, so the flag is skipped there.
-    if (config.production && !local) flags.push('Secure')
+    // Judged from the address the browser used, not the Host a reverse proxy
+    // may have rewritten to localhost.
+    const origin = new URL(requestOrigin(req))
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)
+    // A plain-HTTP local run stays without Secure so sign-in works on
+    // localhost; everything else in production, and any HTTPS origin, gets it.
+    if (origin.protocol === 'https:' || (config.production && !local)) flags.push('Secure')
     return `${COOKIE}=${value}; ${flags.join('; ')}`
   }
 
@@ -126,7 +134,12 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
     } catch {
       throw new PortalUnreachable()
     }
-    return res.json().catch(() => ({}))
+    try {
+      return await res.json()
+    } catch {
+      // A gateway's HTML error page is an outage, not a wrong password.
+      throw new PortalUnreachable()
+    }
   }
 
   /** Exchange GeoHub credentials for a portal token. Server-side only. */
@@ -191,7 +204,7 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
       const { token, expiresAt } = await generatePortalToken(username, password, origin)
       const user = await hydrateUser(token, origin, username)
       const maxAge = Math.max(60, Math.floor((expiresAt - Date.now()) / 1000))
-      res.setHeader('Set-Cookie', cookieHeader(req, sign({ token, ...user, expiresAt }), maxAge))
+      res.setHeader('Set-Cookie', cookieHeader(req, seal({ token, ...user, expiresAt }), maxAge))
       return sendJson(res, 200, { authenticated: true, user })
     } catch (err) {
       if (err instanceof PortalUnreachable) {
@@ -203,22 +216,26 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
   }
 
   async function proxy(req, res, url) {
-    // url.pathname is already normalised by the URL parser, so `..` and
-    // `%2e%2e` segments have been resolved before this check.
+    // Only the one operation the app uses is forwarded: a query on the parcel
+    // layer or the two tables. Matching the whole path, rather than a prefix,
+    // leaves no room for `..;/`, encoded slashes or other tricks that GeoHub's
+    // front end might normalise differently from this server.
     const rest = url.pathname.slice(PROXY_BASE.length)
-    if (rest !== ALLOWED_PREFIX && !rest.startsWith(`${ALLOWED_PREFIX}/`)) {
-      return sendJson(res, 404, { error: 'Not found.' })
-    }
+    const match = rest.startsWith(`${ALLOWED_PREFIX}/`) && /^\/([0-2])\/query$/.exec(rest.slice(ALLOWED_PREFIX.length))
+    if (!match) return sendJson(res, 404, { error: 'Not found.' })
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' })
 
     const session = readSession(req)
     if (!session?.token) return sendJson(res, 401, { error: 'Sign in to continue.' })
 
-    const target = new URL(`${config.serverUrl}${rest}`)
-    // The session's token is the only one that counts.
+    const target = new URL(`${config.serverUrl}${ALLOWED_PREFIX}/${match[1]}/query`)
+    // The session's token is the only one that counts, and the answer is
+    // always JSON: no HTML or JSONP from GeoHub is served on this origin.
+    const dropped = new Set(['token', 'callback', 'f'])
     url.searchParams.forEach((value, key) => {
-      if (key !== 'token') target.searchParams.append(key, value)
+      if (!dropped.has(key.toLowerCase())) target.searchParams.append(key, value)
     })
+    target.searchParams.set('f', 'json')
     target.searchParams.set('token', session.token)
 
     let upstream
@@ -238,7 +255,7 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
     try {
       code = JSON.parse(text)?.error?.code ?? null
     } catch {
-      // Not JSON: pass it through as it is.
+      return sendJson(res, 502, { error: 'GeoHub could not answer the request.' })
     }
     if (code === 498 || code === 499) {
       clearSession(req, res)
@@ -246,7 +263,8 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
     }
 
     res.statusCode = upstream.status
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8')
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('Cache-Control', 'no-store')
     res.end(text)
   }

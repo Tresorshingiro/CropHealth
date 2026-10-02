@@ -38,10 +38,12 @@ GeoHub proxy (`/api/gh/server/*`) are routes on the Node process.
 ## How access works
 
 1. The sign-in form posts the GeoHub username and password to this server.
-2. The server exchanges them for a portal token and stores it in a signed,
-   HttpOnly cookie. The browser never sees the token.
+2. The server exchanges them for a portal token and stores it in an
+   encrypted, HttpOnly cookie. Neither page scripts nor the user can read the
+   token from it. Changing `SESSION_SECRET` signs everyone out.
 3. Data requests go to `/api/gh/server/...`. The server adds the token and
-   forwards them to GeoHub. Only `GET` requests to the
-   `RW_CropHealth_V2_View` feature service are forwarded.
+   forwards them to GeoHub. Only `GET` queries on the parcel layer and the
+   observation and index-guide tables of the `RW_CropHealth_V2_View` feature
+   service are forwarded; every other path is answered with 404.
 
 Sentinel-2 imagery is public and loaded by the browser directly.
