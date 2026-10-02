@@ -1801,7 +1801,7 @@ export function readHistory() {
   try {
     const value = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]')
     if (!Array.isArray(value)) return []
-    return value.filter((item) => parseUpi(item) === item).slice(0, LIMIT)
+    return value.filter((item) => typeof item === 'string' && parseUpi(item) === item).slice(0, LIMIT)
   } catch {
     return []
   }
