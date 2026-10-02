@@ -1,7 +1,21 @@
+import { Navigate, Route, Routes } from 'react-router-dom'
+import AuthGate from './auth/AuthGate.jsx'
+import LoginPage from './auth/LoginPage.jsx'
+import Dashboard from './pages/Dashboard.jsx'
+
 export default function App() {
   return (
-    <main className="grid min-h-screen place-items-center">
-      <h1 className="text-2xl font-semibold">Crop Health Monitoring</h1>
-    </main>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/"
+        element={
+          <AuthGate>
+            <Dashboard />
+          </AuthGate>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
