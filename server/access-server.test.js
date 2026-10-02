@@ -171,3 +171,116 @@ describe('session', () => {
     expect(await res.json()).toEqual({ error: 'Not found.' })
   })
 })
+
+describe('service proxy', () => {
+  const SERVICE = '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer'
+
+  /** Sign in against the fake portal, with `service` answering feature-service calls. */
+  async function signedIn(service) {
+    const ctx = await start((url, init) =>
+      url.startsWith('https://portal.test/server/') ? service(url, init) : portal(url, init),
+    )
+    const cookie = cookieOf(await login(ctx.base, 'tresor', 'right'))
+    const serviceCalls = () => ctx.calls.filter((c) => c.url.startsWith('https://portal.test/server/'))
+    return { ...ctx, cookie, serviceCalls }
+  }
+
+  /** fetch() normalises `..` before sending, so raw paths need http.request. */
+  function rawGet(base, path, cookie) {
+    return new Promise((resolve, reject) => {
+      const { hostname, port } = new URL(base)
+      const req = http.request({ hostname, port, path, method: 'GET', headers: { cookie } }, (res) => {
+        let body = ''
+        res.on('data', (chunk) => (body += chunk))
+        res.on('end', () => resolve({ status: res.statusCode, body }))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }
+
+  it('forwards a query with the session token and the bound referer', async () => {
+    const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({ features: [{ attributes: { upi: 'x' } }] }))
+    const res = await fetch(`${base}${SERVICE}/0/query?where=1%3D1&f=json&token=EVIL`, { headers: { cookie } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ features: [{ attributes: { upi: 'x' } }] })
+
+    const [call] = serviceCalls()
+    const sent = new URL(call.url)
+    expect(sent.pathname).toBe('/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/0/query')
+    expect(sent.searchParams.get('where')).toBe('1=1')
+    expect(sent.searchParams.getAll('token')).toEqual(['TOK'])
+    expect(call.init.headers.referer).toBe(base)
+  })
+
+  it('refuses a request with no session and does not call GeoHub', async () => {
+    const { base, serviceCalls } = await signedIn(() => jsonResponse({}))
+    const res = await fetch(`${base}${SERVICE}/0/query?f=json`)
+    expect(res.status).toBe(401)
+    expect(serviceCalls()).toHaveLength(0)
+  })
+
+  it('returns 404 for any other service', async () => {
+    const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({}))
+    const paths = [
+      '/api/gh/server/rest/services/Hosted/Other/FeatureServer/0/query',
+      '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_ViewX/FeatureServer/0/query',
+      '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServerX/0',
+      '/api/gh/server/admin',
+      '/api/gh/server',
+    ]
+    for (const path of paths) {
+      const res = await fetch(`${base}${path}`, { headers: { cookie } })
+      expect(res.status, path).toBe(404)
+    }
+    expect(serviceCalls()).toHaveLength(0)
+  })
+
+  it('returns 404 when dot segments try to leave the service', async () => {
+    const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({}))
+    const paths = [
+      `${SERVICE}/../../Other/FeatureServer/0/query`,
+      `${SERVICE}/%2e%2e/%2e%2e/Other/FeatureServer/0/query`,
+      `${SERVICE}/0/../../../../../../portal/sharing/rest/portals/self`,
+    ]
+    for (const path of paths) {
+      const res = await rawGet(base, path, cookie)
+      expect(res.status, path).toBe(404)
+    }
+    expect(serviceCalls()).toHaveLength(0)
+  })
+
+  it('refuses methods other than GET', async () => {
+    const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({}))
+    const res = await fetch(`${base}${SERVICE}/0/applyEdits`, { method: 'POST', headers: { cookie }, body: 'f=json' })
+    expect(res.status).toBe(405)
+    expect(serviceCalls()).toHaveLength(0)
+  })
+
+  it('turns an ArcGIS invalid-token answer into 401 and clears the cookie', async () => {
+    for (const code of [498, 499]) {
+      const { base, cookie } = await signedIn(() => jsonResponse({ error: { code, message: 'Invalid token.' } }))
+      const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
+      expect(res.status).toBe(401)
+      expect(res.headers.get('set-cookie')).toMatch(/crophealth_session=;.*Max-Age=0/)
+      server.closeAllConnections()
+      await new Promise((resolve) => server.close(resolve))
+      server = null
+    }
+  })
+
+  it('passes other ArcGIS errors through unchanged', async () => {
+    const { base, cookie } = await signedIn(() => jsonResponse({ error: { code: 400, message: 'Invalid query' } }))
+    const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ error: { code: 400, message: 'Invalid query' } })
+  })
+
+  it('reports an unreachable GeoHub as 502', async () => {
+    const { base, cookie } = await signedIn(() => {
+      throw new Error('ECONNRESET')
+    })
+    const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
+    expect(res.status).toBe(502)
+  })
+})

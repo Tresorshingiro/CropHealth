@@ -202,6 +202,55 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
     }
   }
 
+  async function proxy(req, res, url) {
+    // url.pathname is already normalised by the URL parser, so `..` and
+    // `%2e%2e` segments have been resolved before this check.
+    const rest = url.pathname.slice(PROXY_BASE.length)
+    if (rest !== ALLOWED_PREFIX && !rest.startsWith(`${ALLOWED_PREFIX}/`)) {
+      return sendJson(res, 404, { error: 'Not found.' })
+    }
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' })
+
+    const session = readSession(req)
+    if (!session?.token) return sendJson(res, 401, { error: 'Sign in to continue.' })
+
+    const target = new URL(`${config.serverUrl}${rest}`)
+    // The session's token is the only one that counts.
+    url.searchParams.forEach((value, key) => {
+      if (key !== 'token') target.searchParams.append(key, value)
+    })
+    target.searchParams.set('token', session.token)
+
+    let upstream
+    let text
+    try {
+      upstream = await fetchImpl(target, {
+        headers: { accept: 'application/json', referer: requestOrigin(req) },
+        redirect: 'manual',
+      })
+      text = await upstream.text()
+    } catch {
+      return sendJson(res, 502, { error: 'Could not reach GeoHub. Try again in a moment.' })
+    }
+
+    // ArcGIS reports a dead token as HTTP 200 with the failure in the body.
+    let code = null
+    try {
+      code = JSON.parse(text)?.error?.code ?? null
+    } catch {
+      // Not JSON: pass it through as it is.
+    }
+    if (code === 498 || code === 499) {
+      clearSession(req, res)
+      return sendJson(res, 401, { error: 'Your session has expired. Sign in again.' })
+    }
+
+    res.statusCode = upstream.status
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    res.end(text)
+  }
+
   return async function accessMiddleware(req, res, next) {
     const url = new URL(req.url, 'http://localhost')
     const { pathname } = url
@@ -224,6 +273,10 @@ export function createAccessMiddleware(config, fetchImpl = globalThis.fetch) {
       if (pathname === '/api/auth/logout' && req.method === 'POST') {
         clearSession(req, res)
         return sendJson(res, 200, { authenticated: false })
+      }
+
+      if (pathname === PROXY_BASE || pathname.startsWith(`${PROXY_BASE}/`)) {
+        return await proxy(req, res, url)
       }
 
       if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Not found.' })
