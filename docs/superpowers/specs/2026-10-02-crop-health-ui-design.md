@@ -90,11 +90,12 @@ Routes:
   message).
 - `GET /api/auth/session`: returns `{ authenticated, user }`.
 - `POST /api/auth/logout`: clears the cookie.
-- `GET|POST /api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/**`:
+- `GET /api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/**`:
   forwards to the ArcGIS Server with the session token attached and the
   referer the token was bound to. Any `token` parameter sent by the browser is
   dropped. Paths outside this one service get 404, so the proxy cannot be used
-  to reach anything else. With no valid session it returns 401.
+  to reach anything else. Other methods get 405: the app only reads. With no
+  valid session it returns 401.
 
 Not carried over from Natural-resource: response body rewriting, the portal
 and Survey123 proxies, the frame-referer routing and the TLS dev certificate
@@ -146,8 +147,11 @@ new function in that module.
 - `getObservations(upi)` → array of `{ date, ndvi, ndmi, ndre, clearShare }`
   sorted by date ascending. Query: table 1, `where upi = '<upi>'`,
   `orderByFields=obs_date`.
-- `listParcels()` → array of `{ upi, district, ndviLevel, latestDate }` for the
-  table, paged with `resultOffset` until `exceededTransferLimit` is false.
+- `listParcels()` → `{ parcels, truncated }`, where each parcel is
+  `{ upi, district, ndviLevel, latestDate, rings }`. One call feeds both the
+  table and the map outlines. Paged with `resultOffset` until
+  `exceededTransferLimit` is false, stopping after 5 pages (5,000 parcels);
+  `truncated` is true when more remain, and the table says so.
 - `getIndexGuide()` → array of the three guide entries sorted by `sort_order`,
   fetched once and cached for the session.
 
@@ -181,7 +185,7 @@ chart. On narrow screens the areas stack in one column.
 
 **Map:**
 - Sentinel-2 background with a switcher: NDVI (default), NDMI, natural colour.
-- `WatchedParcels` outlines drawn from the proxied feature layer.
+- `WatchedParcels` outlines, drawn from the `listParcels()` result.
 - The selected parcel is highlighted and the view zooms to it.
 - Clicking a parcel on the map selects it.
 - Before any parcel is selected the map shows the layer's full extent
@@ -219,13 +223,18 @@ dashboard.
 - The theme is applied before the first paint (a small inline script in
   `index.html` sets the class on `<html>`), so the page does not flash the
   wrong theme on load.
-- Implementation: Tailwind's class-based dark mode. Colours are defined once
-  as CSS variables for each theme (surface, border, text, accent, and the
-  three index colours) and referenced through Tailwind theme tokens, so
-  components do not carry per-theme colour values.
-- The three index colours are chosen separately for each theme so the lines
-  and card values stay readable against both backgrounds.
-- Chart axes, grid, tooltip and legend read the same variables.
+- Implementation: Tailwind's class-based dark mode. Interface colours are
+  defined once as CSS variables for each theme (page, surface, border, text,
+  accent) and referenced through Tailwind theme tokens, so components do not
+  carry per-theme colour values.
+- The three index colours are chosen separately for each theme so they stay
+  distinguishable against both backgrounds, including for colour-blind
+  readers. They live in one palette module keyed by theme, together with the
+  chart's grid, axis and tooltip colours, because the chart library takes
+  colours as values, not CSS variables.
+- Index values and labels are written in the normal text colour; the index
+  colour appears as a line or a swatch beside them.
+- The chart has a table view of the same numbers.
 - The ArcGIS map widgets (zoom, layer switcher) use the SDK's matching light
   or dark stylesheet. The Sentinel-2 imagery itself is the same in both
   themes; the parcel outline and highlight colours are picked to stay visible
