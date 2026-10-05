@@ -1,10 +1,16 @@
 import { useMemo, useState } from 'react'
+import { formatDate } from '../lib/format.js'
 
+const byText = (key) => (a, b) => a[key].localeCompare(b[key], 'en', { numeric: true })
+
+// Each sort compares two parcels that both have the field; parcels without it
+// go last whichever way the list runs.
 const SORTS = [
-  { key: 'upi', label: 'UPI' },
-  { key: 'district', label: 'District' },
-  { key: 'ndviLevel', label: 'NDVI level' },
+  { key: 'upi', label: 'UPI', compare: byText('upi') },
+  { key: 'district', label: 'District', compare: byText('district') },
+  { key: 'latestDate', label: 'Latest clear view', compare: (a, b) => b.latestDate - a.latestDate },
 ]
+const FILTERED = ['upi', 'district']
 
 /** The analysed parcels as a filterable, sortable list for the sidebar. */
 export default function ParcelList({ status, parcels, truncated, selectedUpi, error, onSelect, onRetry }) {
@@ -15,14 +21,14 @@ export default function ParcelList({ status, parcels, truncated, selectedUpi, er
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     const factor = reversed ? -1 : 1
+    const { compare } = SORTS.find((sort) => sort.key === sortKey)
+    const missing = (parcel) => parcel[sortKey] === null || parcel[sortKey] === undefined || parcel[sortKey] === ''
     return parcels
       .filter(
         (parcel) =>
-          !needle || SORTS.some(({ key }) => String(parcel[key] ?? '').toLowerCase().includes(needle)),
+          !needle || FILTERED.some((key) => String(parcel[key] ?? '').toLowerCase().includes(needle)),
       )
-      .sort(
-        (a, b) => factor * String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? ''), 'en', { numeric: true }),
-      )
+      .sort((a, b) => missing(a) - missing(b) || (missing(a) ? 0 : factor * compare(a, b)))
   }, [parcels, sortKey, reversed, filter])
 
   if (status === 'loading') {
@@ -54,7 +60,7 @@ export default function ParcelList({ status, parcels, truncated, selectedUpi, er
           id="parcel-filter"
           type="search"
           className="field"
-          placeholder="Filter by UPI, district or level"
+          placeholder="Filter by UPI or district"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
@@ -97,7 +103,8 @@ export default function ParcelList({ status, parcels, truncated, selectedUpi, er
         <ul className="-mx-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto px-1">
           {rows.map((parcel) => {
             const selected = parcel.upi === selectedUpi
-            const detail = [parcel.district, parcel.ndviLevel].filter(Boolean).join(' · ')
+            const date = typeof parcel.latestDate === 'number' ? formatDate(parcel.latestDate) : null
+            const detail = [parcel.district, date].filter(Boolean).join(' · ')
             return (
               <li key={parcel.upi}>
                 <button

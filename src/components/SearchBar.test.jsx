@@ -20,6 +20,25 @@ describe('SearchBar', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('writes a short UPI the way the layer stores it', async () => {
+    const { onSubmit } = renderBar()
+    await userEvent.type(screen.getByLabelText('UPI'), '5/5/10/2/1939{Enter}')
+    expect(onSubmit).toHaveBeenCalledWith('5/05/10/02/1939')
+  })
+
+  it('opens a drawn area by its id', async () => {
+    const { onSubmit } = renderBar()
+    await userEvent.type(screen.getByLabelText('UPI'), 'area-1a2b3c4d{Enter}')
+    expect(onSubmit).toHaveBeenCalledWith('AREA-1A2B3C4D')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows no format message for a drawn area from a link', () => {
+    renderBar({ selected: 'AREA North field' })
+    expect(screen.getByLabelText('UPI')).toHaveValue('AREA North field')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('submits on Enter', async () => {
     const { onSubmit } = renderBar()
     await userEvent.type(screen.getByLabelText('UPI'), '5/05/10/02/1939{Enter}')

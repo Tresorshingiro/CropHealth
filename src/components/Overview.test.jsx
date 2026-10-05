@@ -2,14 +2,14 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import Overview from './Overview.jsx'
 
-const parcel = (upi, district, ndviLevel, latestDate) => ({ upi, district, ndviLevel, latestDate, rings: null })
+const parcel = (upi, district, latestDate) => ({ upi, district, latestDate, rings: null })
 
 const PARCELS = [
-  parcel('5/05/10/02/1939', 'Kirehe', 'bare ground', 1790294400000),
-  parcel('5/05/10/02/2206', 'Kirehe', 'bare ground', 1789862400000),
-  parcel('5/02/06/06/1702', 'Nyagatare', 'very sparse cover', 1754265600000),
-  parcel('5/04/08/04/1948', 'Kayonza', null, null),
-  parcel('5/04/08/04/2011', null, 'bare ground', null),
+  parcel('5/05/10/02/1939', 'Kirehe', 1790294400000),
+  parcel('5/05/10/02/2206', 'Kirehe', 1789862400000),
+  parcel('5/02/06/06/1702', 'Nyagatare', 1754265600000),
+  parcel('5/04/08/04/1948', 'Kayonza', null),
+  parcel('AREA North field', null, null),
 ]
 
 const stat = (label) => screen.getByText(label).closest('div')
@@ -24,10 +24,10 @@ describe('Overview', () => {
     expect(stat('Latest clear view')).toHaveTextContent('25 Sep 2026')
   })
 
-  it('counts parcels by NDVI level, largest first, with parcels that have none', () => {
+  it('counts parcels by district, largest first, then by name, with parcels that have none last', () => {
     render(<Overview status="ready" parcels={PARCELS} truncated={false} />)
-    const rows = within(screen.getByRole('list', { name: 'Parcels by NDVI level' })).getAllByRole('listitem')
-    expect(rows.map((row) => row.textContent)).toEqual(['bare ground3', 'very sparse cover1', 'No level1'])
+    const rows = within(screen.getByRole('list', { name: 'Parcels by district' })).getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual(['Kirehe2', 'Kayonza1', 'Nyagatare1', 'No district1'])
   })
 
   it('says when the counts cover only part of the layer', () => {
@@ -40,7 +40,7 @@ describe('Overview', () => {
     expect(stat('Parcels analysed')).toHaveTextContent('0')
     expect(stat('Districts')).toHaveTextContent('0')
     expect(stat('Latest clear view')).toHaveTextContent('–')
-    expect(screen.queryByRole('list', { name: 'Parcels by NDVI level' })).toBeNull()
+    expect(screen.queryByRole('list', { name: 'Parcels by district' })).toBeNull()
     expect(container.textContent).not.toMatch(/NaN|Invalid|undefined|-Infinity/)
   })
 

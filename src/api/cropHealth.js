@@ -1,4 +1,4 @@
-import { parseUpi } from '../lib/upi.js'
+import { parseParcelId } from '../lib/upi.js'
 import { queryAll, queryLayer } from './arcgis.js'
 
 const PARCELS = 0
@@ -15,8 +15,8 @@ const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? va
 const text = (value) => (typeof value === 'string' && value.trim() !== '' ? value : null)
 const rings = (geometry) => (Array.isArray(geometry?.rings) && geometry.rings.length ? geometry.rings : null)
 
-// parseUpi only lets digits and slashes through, so the value is safe to
-// place in a where clause.
+// `upi` holds a parcel's UPI or a drawn area's id. parseParcelId lets neither
+// quotes nor any other SQL through, so the value is safe in a where clause.
 const whereUpi = (upi) => `upi = '${upi}'`
 
 function toParcel({ attributes: a = {}, geometry }) {
@@ -44,7 +44,7 @@ function toParcel({ attributes: a = {}, geometry }) {
 }
 
 export async function getParcel(input, options) {
-  const upi = parseUpi(input)
+  const upi = parseParcelId(input)
   if (!upi) return null
   const data = await queryLayer(
     PARCELS,
@@ -56,7 +56,7 @@ export async function getParcel(input, options) {
 }
 
 export async function getObservations(input, options) {
-  const upi = parseUpi(input)
+  const upi = parseParcelId(input)
   if (!upi) return []
   const { features } = await queryAll(
     OBSERVATIONS,
@@ -85,7 +85,7 @@ export async function listParcels(options) {
     PARCELS,
     {
       where: '1=1',
-      outFields: 'upi,district,ndvi_level,latest_date',
+      outFields: 'upi,district,latest_date',
       orderByFields: 'objectid ASC',
       returnGeometry: 'true',
       outSR: '4326',
@@ -96,7 +96,6 @@ export async function listParcels(options) {
     .map(({ attributes: a = {}, geometry }) => ({
       upi: text(a.upi),
       district: text(a.district),
-      ndviLevel: text(a.ndvi_level),
       latestDate: num(a.latest_date),
       rings: rings(geometry),
     }))

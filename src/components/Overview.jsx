@@ -14,16 +14,20 @@ export default function Overview({ status, parcels, truncated }) {
     const districts = new Set(parcels.map((parcel) => parcel.district).filter(Boolean))
     const dates = parcels.map((parcel) => parcel.latestDate).filter((date) => typeof date === 'number')
     const counts = new Map()
+    let unplaced = 0
     for (const parcel of parcels) {
-      const level = parcel.ndviLevel || 'No level'
-      counts.set(level, (counts.get(level) || 0) + 1)
+      if (parcel.district) counts.set(parcel.district, (counts.get(parcel.district) || 0) + 1)
+      else unplaced += 1
     }
-    const levels = [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
+    const byDistrict = [...counts]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    if (unplaced) byDistrict.push({ label: 'No district', count: unplaced })
     return {
       districts: districts.size,
       latest: dates.length ? Math.max(...dates) : null,
-      levels,
-      most: levels[0]?.count ?? 0,
+      byDistrict,
+      most: Math.max(0, ...byDistrict.map((row) => row.count)),
     }
   }, [parcels])
 
@@ -53,13 +57,13 @@ export default function Overview({ status, parcels, truncated }) {
             )}
           </div>
 
-          {summary.levels.length > 0 && (
+          {summary.byDistrict.length > 0 && (
             <div className="panel p-5">
-              <p id="levels-title" className="text-xs text-ink-2">
-                Parcels by NDVI level
+              <p id="districts-title" className="text-xs text-ink-2">
+                Parcels by district
               </p>
-              <ul aria-labelledby="levels-title" className="mt-3 space-y-2.5">
-                {summary.levels.map(({ label, count }) => (
+              <ul aria-labelledby="districts-title" className="mt-3 space-y-2.5">
+                {summary.byDistrict.map(({ label, count }) => (
                   <li key={label} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_2rem] items-center gap-3 text-sm">
                     <span className="truncate">{label}</span>
                     <span aria-hidden="true" className="h-2 rounded-full bg-ink/10">

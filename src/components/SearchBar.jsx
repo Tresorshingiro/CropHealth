@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { parseUpi, UPI_FORMAT_MESSAGE } from '../lib/upi.js'
+import { parseParcelId, UPI_FORMAT_MESSAGE } from '../lib/upi.js'
 
-const formatError = (text) => (text && !parseUpi(text) ? UPI_FORMAT_MESSAGE : null)
+// A drawn area's id (AREA …) is accepted too; the message names only the UPI,
+// which is what people type.
+const formatError = (text) => (text && !parseParcelId(text) ? UPI_FORMAT_MESSAGE : null)
 
 /** The UPI search: field and Run, with recently opened parcels offered while the field has focus. */
 export default function SearchBar({ selected = '', history, onSubmit }) {
@@ -19,7 +21,7 @@ export default function SearchBar({ selected = '', history, onSubmit }) {
 
   const submit = (event) => {
     event.preventDefault()
-    const upi = parseUpi(value)
+    const upi = parseParcelId(value)
     if (!upi) {
       setError(UPI_FORMAT_MESSAGE)
       return

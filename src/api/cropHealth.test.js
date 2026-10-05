@@ -79,6 +79,19 @@ describe('getParcel', () => {
     expect(await getParcel('5/05/10/02/1')).toBeNull()
   })
 
+  it('looks up a UPI the way the analysis tool stores it', async () => {
+    fetchMock.mockResolvedValue(json({ features: [] }))
+    await getParcel('5/5/10/2/1939')
+    expect(sentUrl().searchParams.get('where')).toBe("upi = '5/05/10/02/1939'")
+  })
+
+  it('looks up a drawn area by its id', async () => {
+    fetchMock.mockResolvedValue(json({ features: [{ ...PARCEL_FEATURE, attributes: { upi: 'AREA North field' } }] }))
+    const parcel = await getParcel('area North field')
+    expect(sentUrl().searchParams.get('where')).toBe("upi = 'AREA North field'")
+    expect(parcel.upi).toBe('AREA North field')
+  })
+
   it('sends nothing for text that is not a UPI', async () => {
     expect(await getParcel("5/05/10/02/1' OR '1'='1")).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
@@ -125,15 +138,22 @@ describe('getObservations', () => {
     ])
   })
 
+  it('reads the history of a drawn area', async () => {
+    fetchMock.mockResolvedValue(json({ features: [] }))
+    await getObservations('AREA-1A2B3C4D')
+    expect(sentUrl().searchParams.get('where')).toBe("upi = 'AREA-1A2B3C4D'")
+  })
+
   it('returns an empty list for text that is not a UPI', async () => {
     expect(await getObservations('nope')).toEqual([])
+    expect(await getObservations("AREA x' OR '1'='1")).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
 describe('listParcels', () => {
   const row = (n) => ({
-    attributes: { upi: `5/05/10/02/${n}`, district: 'Kirehe', ndvi_level: 'bare ground', latest_date: 1790294400000 },
+    attributes: { upi: `5/05/10/02/${n}`, district: 'Kirehe', latest_date: 1790294400000 },
     geometry: { rings: [[[30, -2], [30.1, -2], [30, -2.1], [30, -2]]] },
   })
 
@@ -150,7 +170,6 @@ describe('listParcels', () => {
     expect(result.parcels[0]).toEqual({
       upi: '5/05/10/02/1',
       district: 'Kirehe',
-      ndviLevel: 'bare ground',
       latestDate: 1790294400000,
       rings: [[[30, -2], [30.1, -2], [30, -2.1], [30, -2]]],
     })

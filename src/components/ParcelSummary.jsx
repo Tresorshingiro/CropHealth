@@ -1,4 +1,5 @@
 import { formatDate, formatHectares } from '../lib/format.js'
+import { isAreaId } from '../lib/upi.js'
 import { CHART_COLORS, SERIES } from '../theme/palette.js'
 import { useTheme } from '../theme/ThemeContext.jsx'
 import IndexMeter from './IndexMeter.jsx'
@@ -66,6 +67,11 @@ export default function ParcelSummary({ status, parcel, error, onRetry, guide })
                 {parcel.district}
               </span>
             )}
+            {isAreaId(parcel.upi) && (
+              <span className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink-2">
+                Drawn field
+              </span>
+            )}
           </div>
           {place && <p className="mt-1 text-sm text-ink-2">{place}</p>}
         </div>
@@ -73,7 +79,8 @@ export default function ParcelSummary({ status, parcel, error, onRetry, guide })
         <dl className="flex flex-wrap gap-x-8 gap-y-3">
           <Fact label="Latest clear view">{formatDate(parcel.latestDate)}</Fact>
           <Fact label="Area">{formatHectares(parcel.areaM2)}</Fact>
-          <Fact label="Reliability">{parcel.reliability ?? '–'}</Fact>
+          {/* The analysis tool writes no reliability, so a re-analysed parcel has none. */}
+          {parcel.reliability && <Fact label="Reliability">{parcel.reliability}</Fact>}
           <Fact label="Clear dates">{parcel.usableDates ?? '–'}</Fact>
         </dl>
       </div>

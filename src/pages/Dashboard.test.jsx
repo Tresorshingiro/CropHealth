@@ -55,7 +55,7 @@ const parcel = (upi, district) => ({
 
 const A = parcel('5/05/10/02/1939', 'Kirehe')
 const B = parcel('5/02/06/06/1702', 'Nyagatare')
-const row = (p) => ({ upi: p.upi, district: p.district, ndviLevel: p.ndviLevel, latestDate: p.latestDate, rings: p.rings })
+const row = (p) => ({ upi: p.upi, district: p.district, latestDate: p.latestDate, rings: p.rings })
 const OBSERVATIONS = [{ date: 1754265600000, ndvi: 0.39, ndmi: -0.09, ndre: 0.24, clearShare: 1 }]
 const GUIDE = [
   {
@@ -141,6 +141,19 @@ describe('Dashboard', () => {
     await userEvent.click(await inList(B.upi))
     expect(await within(report()).findByRole('heading', { name: B.upi })).toBeInTheDocument()
     expect(selectedInUrl()).toBe(B.upi)
+  })
+
+  it('opens a drawn area from the list, like a parcel', async () => {
+    const area = { ...parcel('AREA North field', 'Kirehe'), reliability: null, ndviLevel: null, headline: null }
+    getParcel.mockImplementation(async (id) => [A, B, area].find((p) => p.upi === id) ?? null)
+    listParcels.mockResolvedValue({ parcels: [row(A), row(B), row(area)], truncated: false })
+    renderDashboard()
+    await userEvent.click(await inList(area.upi))
+    expect(await within(report()).findByRole('heading', { name: area.upi })).toBeInTheDocument()
+    expect(within(report()).getByText('Drawn field')).toBeInTheDocument()
+    expect(selectedInUrl()).toBe(area.upi)
+    expect(getParcel).toHaveBeenCalledWith(area.upi, expect.anything())
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('opens the menu on a small screen, and closes it on Escape, on close and after choosing a parcel', async () => {

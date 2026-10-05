@@ -1,4 +1,4 @@
-import { parseUpi } from './upi.js'
+import { parseParcelId } from './upi.js'
 
 const STORAGE_KEY = 'crophealth-history'
 const LIMIT = 20
@@ -7,7 +7,7 @@ export function readHistory() {
   try {
     const value = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]')
     if (!Array.isArray(value)) return []
-    return value.filter((item) => typeof item === 'string' && parseUpi(item) === item).slice(0, LIMIT)
+    return value.filter((item) => typeof item === 'string' && parseParcelId(item) === item).slice(0, LIMIT)
   } catch {
     return []
   }

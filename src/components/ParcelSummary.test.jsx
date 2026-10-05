@@ -126,6 +126,23 @@ describe('ParcelSummary', () => {
     expect(container.textContent).not.toMatch(/NaN|null|undefined|Invalid/)
   })
 
+  it('leaves out reliability when the layer has none, as the analysis tool writes it', () => {
+    renderSummary({ status: 'ready', guide: READY_GUIDE, parcel: { ...PARCEL, reliability: null } })
+    expect(screen.queryByText('Reliability')).toBeNull()
+    expect(screen.getByText('Clear dates')).toBeInTheDocument()
+  })
+
+  it('marks a drawn area as a drawn field', () => {
+    renderSummary({ status: 'ready', guide: READY_GUIDE, parcel: { ...PARCEL, upi: 'AREA North field' } })
+    expect(screen.getByRole('heading', { name: 'AREA North field' })).toBeInTheDocument()
+    expect(screen.getByText('Drawn field')).toBeInTheDocument()
+  })
+
+  it('does not mark a parcel as drawn', () => {
+    renderSummary({ status: 'ready', guide: READY_GUIDE, parcel: PARCEL })
+    expect(screen.queryByText('Drawn field')).toBeNull()
+  })
+
   it('explains an index in place when its info button is pressed', async () => {
     renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
     const button = screen.getByRole('button', { name: 'About NDVI' })

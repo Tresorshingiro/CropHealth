@@ -33,9 +33,12 @@ describe('history', () => {
     expect(readHistory()).toEqual([])
   })
 
-  it('drops stored entries that are not valid UPIs', () => {
-    window.localStorage.setItem('crophealth-history', JSON.stringify([upi(1), 7, null, '<b>x</b>', upi(2)]))
-    expect(readHistory()).toEqual([upi(1), upi(2)])
+  it('drops stored entries that are not valid UPIs or area ids', () => {
+    window.localStorage.setItem(
+      'crophealth-history',
+      JSON.stringify([upi(1), 7, null, '<b>x</b>', 'AREA-1A2B3C4D', 'area-1a2b3c4d', upi(2)]),
+    )
+    expect(readHistory()).toEqual([upi(1), 'AREA-1A2B3C4D', upi(2)])
   })
 
   it('returns an empty list when the stored value is not an array', () => {

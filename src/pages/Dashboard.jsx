@@ -10,7 +10,7 @@ import ParcelSummary from '../components/ParcelSummary.jsx'
 import SearchBar from '../components/SearchBar.jsx'
 import Sidebar from '../components/Sidebar.jsx'
 import { addToHistory, readHistory } from '../lib/history.js'
-import { parseUpi } from '../lib/upi.js'
+import { parseParcelId } from '../lib/upi.js'
 
 // The map SDK is large: load it apart from the rest of the page.
 const ParcelMap = lazy(() => import('../components/ParcelMap.jsx'))
@@ -36,7 +36,8 @@ export default function Dashboard() {
   const { user, signOut, expire } = useAuth()
   const [params, setParams] = useSearchParams()
   const rawUpi = params.get('upi') || ''
-  const upi = parseUpi(rawUpi)
+  // A parcel's UPI or a drawn area's id: both are rows of the parcel layer.
+  const upi = parseParcelId(rawUpi)
   const isDesktop = useIsDesktop()
 
   const [attempt, setAttempt] = useState(0)
