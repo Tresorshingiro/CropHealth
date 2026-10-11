@@ -19,9 +19,9 @@ export default {
         danger: token('danger'),
       },
       fontFamily: {
-        // The same pair as the Natural Resource portal, bundled with the app.
-        display: ['"Archivo Variable"', 'system-ui', 'sans-serif'],
-        sans: ['"Inter Variable"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
+        // Lexend, bundled with the app: one family for headings, numbers and text.
+        display: ['"Lexend Variable"', 'system-ui', 'sans-serif'],
+        sans: ['"Lexend Variable"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
       },
       boxShadow: {
         float: '0 8px 30px rgb(0 0 0 / 0.18), 0 1px 3px rgb(0 0 0 / 0.12)',

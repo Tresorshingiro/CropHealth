@@ -31,7 +31,7 @@ export function AuthProvider({ children }) {
 
   const signIn = useCallback(async (username, password) => {
     if (!String(username || '').trim() || !String(password || '')) {
-      return { ok: false, error: 'Enter your GeoHub username and password.' }
+      return { ok: false, error: 'Enter your username and password.' }
     }
     try {
       const res = await fetch('/api/auth/login', {

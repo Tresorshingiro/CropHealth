@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
+import BrandMark from '../components/BrandMark.jsx'
 import ThemeToggle from '../theme/ThemeToggle.jsx'
 import { useAuth } from './AuthContext.jsx'
 
@@ -56,13 +57,13 @@ export default function LoginPage() {
         </div>
       <form onSubmit={onSubmit} noValidate className="mx-auto w-full max-w-sm space-y-5">
         <div>
-          <p className="font-display text-sm font-semibold text-accent">GeoHub Rwanda</p>
+          <BrandMark className="h-11 w-11" />
           <h1 className="mt-2 font-display text-4xl font-semibold leading-[1.05] tracking-tight">
             Crop Health Monitoring
           </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
-            Look up any land parcel by its UPI and see how it is growing, from satellite. Sign in with your GeoHub
-            account.
+          <p className="mt-3 text-[0.9375rem] leading-relaxed text-ink-2">
+            Look up any land parcel by its UPI and see how it is growing, from satellite. Sign in with your GIS
+            portal account.
           </p>
         </div>
 

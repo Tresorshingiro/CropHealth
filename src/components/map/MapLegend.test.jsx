@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import MapLegend from './MapLegend.jsx'
@@ -18,7 +18,7 @@ describe('MapLegend', () => {
     const { onToggle, rerender } = renderLegend({ open: false })
     const button = screen.getByRole('button', { name: 'Legend' })
     expect(button).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('Analysed parcel')).toBeNull()
+    expect(screen.queryByText('Areas of interest by health')).toBeNull()
     await userEvent.click(button)
     expect(onToggle).toHaveBeenCalledTimes(1)
     rerender(<MapLegend open settings={SETTINGS} hasSelected={false} onToggle={onToggle} />)
@@ -27,13 +27,15 @@ describe('MapLegend', () => {
 
   it('names the outlines that are on the map', () => {
     const { rerender } = renderLegend({ hasSelected: true })
-    expect(screen.getByText('Analysed parcel')).toBeInTheDocument()
+    expect(screen.getByText('Areas of interest by health')).toBeInTheDocument()
+    for (const word of ['Good', 'Moderate', 'Poor', 'Not rated']) expect(screen.getByText(word)).toBeInTheDocument()
+    expect(screen.getByText('dots when zoomed out')).toBeInTheDocument()
     expect(screen.getByText('Selected')).toBeInTheDocument()
     expect(screen.getByText('Land parcel (NLA)')).toBeInTheDocument()
     expect(screen.getByText('shown when zoomed in')).toBeInTheDocument()
 
     rerender(<MapLegend open settings={{ ...SETTINGS, analysed: false, land: false }} hasSelected={false} onToggle={() => {}} />)
-    expect(screen.queryByText('Analysed parcel')).toBeNull()
+    expect(screen.queryByText('Areas of interest by health')).toBeNull()
     expect(screen.queryByText('Selected')).toBeNull()
     expect(screen.queryByText('Land parcel (NLA)')).toBeNull()
   })
@@ -52,6 +54,16 @@ describe('MapLegend', () => {
   it('draws the NDMI scale for NDMI', () => {
     renderLegend({ settings: { ...SETTINGS, sentinel: 'ndmi' } })
     expect(screen.getByRole('img', { name: 'NDMI colour scale from -1 to 1, Dry to Moist' })).toBeInTheDocument()
+  })
+
+  it('names the index drawn inside the plot and the image it comes from', () => {
+    renderLegend({ hasSelected: true, plot: { index: 'ndre', scene: { status: 'ready', scene: { date: Date.UTC(2026, 3, 28), cloud: 0.05 } } } })
+    expect(
+      screen.getByRole('img', { name: 'NDRE in the plot colour scale from -0.2 to 0.6, Little chlorophyll to Much chlorophyll' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('-0.2')).toBeInTheDocument()
+    expect(screen.getByText('0.6')).toBeInTheDocument()
+    expect(screen.getByText('Image 28 Apr 2026 · cloud 5%')).toBeInTheDocument()
   })
 
   it('describes the natural-colour picture, which has no scale', () => {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '../theme/ThemeContext.jsx'
@@ -20,39 +20,16 @@ const PARCEL = {
   ndviLevel: 'bare ground',
   ndmiLevel: 'very dry',
   ndreLevel: 'very little chlorophyll',
-  headline: 'On 25 Sep 2026: NDVI 0.14 (bare ground), NDMI -0.30 (very dry), NDRE 0.07 (very little chlorophyll).',
+  headline: 'On 25 Sep 2026: NDVI 0.14 (bare ground).',
   usableDates: 87,
   lastRefreshed: 1790778688448,
   rings: null,
 }
-
-const ENTRIES = [
-  {
-    code: 'NDVI',
-    name: 'Normalized Difference Vegetation Index',
-    meaning: 'How much green leaf is on the ground.',
-    howToRead: 'Rises as a crop covers the soil and falls at harvest.',
-    thresholds: 'below 0.20 bare; 0.20-0.35 very sparse; 0.35-0.55 growing; 0.55-0.75 full canopy; above 0.75 dense',
-    caveats: 'A parcel is often only a few 10 m pixels.',
-    formula: '(B8 - B4) / (B8 + B4)',
-    bands: 'B8 near infrared, B4 red',
-    reference: 'Rouse et al. 1974',
-  },
-  {
-    code: 'NDMI',
-    name: 'Normalized Difference Moisture Index',
-    meaning: 'How much water the leaves and the soil surface hold.',
-    howToRead: 'Falls days before NDVI does.',
-    thresholds: 'not a list of bands',
-    caveats: null,
-    formula: null,
-    bands: null,
-    reference: null,
-  },
-]
-
+const GUIDE = {
+  entries: [{ code: 'NDVI', thresholds: 'below 0.20 bare; 0.20-0.35 very sparse; 0.35-0.55 growing; 0.55-0.75 full canopy; above 0.75 dense' }],
+  error: null,
+}
 const noop = () => {}
-const READY_GUIDE = { entries: ENTRIES, error: null }
 
 function renderSummary(props) {
   return render(
@@ -62,115 +39,72 @@ function renderSummary(props) {
   )
 }
 
+describe('ParcelSummary: updating an analysed parcel with new images', () => {
+  it('shows when it was last updated, and runs the analysis again', async () => {
+    const onStart = vi.fn()
+    renderSummary({ status: 'ready', parcel: PARCEL, refresh: { status: 'idle', message: null, onStart } })
+    expect(screen.getByText('Last updated').closest('div')).toHaveTextContent('Last updated30 Sep 2026')
+    await userEvent.click(screen.getByRole('button', { name: 'Update with new images' }))
+    expect(onStart).toHaveBeenCalled()
+  })
+
+  it('says it is reading, then that it is done; waits for another run; offers a retry with the reason', () => {
+    const { rerender } = renderSummary({ status: 'ready', parcel: PARCEL, refresh: { status: 'running', message: null, onStart: noop } })
+    expect(screen.getByRole('status')).toHaveTextContent('Reading new images')
+    expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
+
+    const again = (refresh) =>
+      rerender(
+        <ThemeProvider>
+          <ParcelSummary onRetry={noop} error={null} guide={{ entries: null, error: null }} status="ready" parcel={PARCEL} refresh={refresh} />
+        </ThemeProvider>,
+      )
+    again({ status: 'succeeded', message: null, onStart: noop })
+    expect(screen.getByText('Updated with the latest images.')).toBeInTheDocument()
+    again({ status: 'busy', message: null, onStart: noop })
+    expect(screen.getByRole('button', { name: 'Update with new images' })).toBeDisabled()
+    again({ status: 'failed', message: 'The analysis did not finish.', onStart: noop })
+    expect(screen.getByRole('alert')).toHaveTextContent('The analysis did not finish.')
+    expect(screen.getByRole('button', { name: 'Try the update again' })).toBeEnabled()
+  })
+})
+
 describe('ParcelSummary', () => {
-  it('shows the parcel, its location, the headline, the three indices and the facts', () => {
-    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
+  it('shows the parcel, its location, the headline and the facts', () => {
+    renderSummary({ status: 'ready', parcel: PARCEL })
     expect(screen.getByRole('heading', { name: '5/05/10/02/1939' })).toBeInTheDocument()
     expect(screen.getByText('Kirehe')).toBeInTheDocument()
     expect(screen.getByText('Nasho · Kagese · Kagese Ii')).toBeInTheDocument()
     expect(screen.getByText(PARCEL.headline)).toBeInTheDocument()
-    expect(screen.getByTestId('NDVI-value')).toHaveTextContent('0.14')
-    expect(screen.getByTestId('NDVI-level')).toHaveTextContent('bare ground')
-    expect(screen.getByTestId('NDMI-value')).toHaveTextContent('-0.30')
-    expect(screen.getByTestId('NDMI-level')).toHaveTextContent('very dry')
-    expect(screen.getByTestId('NDRE-value')).toHaveTextContent('0.07')
-    expect(screen.getByTestId('NDRE-level')).toHaveTextContent('very little chlorophyll')
     expect(screen.getByText('25 Sep 2026')).toBeInTheDocument()
     expect(screen.getByText('1.85 ha')).toBeInTheDocument()
     expect(screen.getByText('good')).toBeInTheDocument()
     expect(screen.getByText('87')).toBeInTheDocument()
+    expect(screen.queryByTestId('NDVI-value')).toBeNull()
   })
 
-  it('draws a scale from the guide thresholds and marks the band the value falls in', () => {
-    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
-    const scale = screen.getByRole('img', { name: 'NDVI scale: bare, very sparse, growing, full canopy, dense. This parcel: bare.' })
-    const bands = within(scale).getAllByTestId('band')
-    expect(bands).toHaveLength(5)
-    expect(bands.map((b) => b.dataset.active)).toEqual(['true', 'false', 'false', 'false', 'false'])
-    expect(within(scale).getByTestId('marker')).toBeInTheDocument()
-    expect(within(scale).getByText('0.2')).toBeInTheDocument()
-    expect(within(scale).getByText('0.75')).toBeInTheDocument()
+  it('sums up crop health from the indices the guide can place, with the season note', () => {
+    renderSummary({ status: 'ready', parcel: PARCEL, guide: GUIDE })
+    const line = screen.getByTestId('crop-health')
+    expect(line).toHaveTextContent('Crop health: Poor. Green cover is poor.')
+    expect(line).toHaveTextContent('Values are naturally low just after planting and after harvest.')
   })
 
-  it('shows value and level without a scale when the thresholds cannot be read or the guide is missing', () => {
-    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
-    expect(screen.queryByRole('img', { name: /^NDMI scale/ })).toBeNull()
-    expect(screen.queryByRole('img', { name: /^NDRE scale/ })).toBeNull()
-    expect(screen.getByTestId('NDMI-value')).toHaveTextContent('-0.30')
-    expect(screen.getByTestId('NDRE-level')).toHaveTextContent('very little chlorophyll')
-  })
-
-  it('shows a dash, no level and no marker for an index with no value', () => {
-    const { container } = renderSummary({
-      status: 'ready',
-      guide: READY_GUIDE,
-      parcel: {
-        ...PARCEL,
-        district: null,
-        sector: null,
-        cell: null,
-        village: null,
-        ndvi: null,
-        latestDate: null,
-        areaM2: null,
-        reliability: null,
-        usableDates: null,
-        headline: null,
-      },
-    })
-    expect(screen.getByRole('heading', { name: '5/05/10/02/1939' })).toBeInTheDocument()
-    expect(screen.getByTestId('NDVI-value')).toHaveTextContent('–')
-    expect(screen.getByTestId('NDVI-level')).toBeEmptyDOMElement()
-    expect(screen.queryByTestId('marker')).toBeNull()
-    expect(screen.getByTestId('NDMI-value')).toHaveTextContent('-0.30')
-    expect(container.textContent).not.toMatch(/NaN|null|undefined|Invalid/)
+  it('gives no crop-health line without a readable guide', () => {
+    renderSummary({ status: 'ready', parcel: PARCEL })
+    expect(screen.queryByTestId('crop-health')).toBeNull()
   })
 
   it('leaves out reliability when the layer has none, as the analysis tool writes it', () => {
-    renderSummary({ status: 'ready', guide: READY_GUIDE, parcel: { ...PARCEL, reliability: null } })
+    renderSummary({ status: 'ready', parcel: { ...PARCEL, reliability: null } })
     expect(screen.queryByText('Reliability')).toBeNull()
     expect(screen.getByText('Clear dates')).toBeInTheDocument()
   })
 
   it('marks a drawn area as a drawn field', () => {
-    renderSummary({ status: 'ready', guide: READY_GUIDE, parcel: { ...PARCEL, upi: 'AREA North field' } })
+    renderSummary({ status: 'ready', parcel: { ...PARCEL, upi: 'AREA North field' } })
     expect(screen.getByRole('heading', { name: 'AREA North field' })).toBeInTheDocument()
     expect(screen.getByText('Drawn field')).toBeInTheDocument()
-  })
-
-  it('does not mark a parcel as drawn', () => {
-    renderSummary({ status: 'ready', guide: READY_GUIDE, parcel: PARCEL })
-    expect(screen.queryByText('Drawn field')).toBeNull()
-  })
-
-  it('explains an index in place when its info button is pressed', async () => {
-    renderSummary({ status: 'ready', parcel: PARCEL, guide: READY_GUIDE })
-    const button = screen.getByRole('button', { name: 'About NDVI' })
-    expect(button).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('How much green leaf is on the ground.')).toBeNull()
-    await userEvent.click(button)
-    expect(button).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('How much green leaf is on the ground.')).toBeInTheDocument()
-    expect(screen.getByText('A parcel is often only a few 10 m pixels.')).toBeInTheDocument()
-    expect(screen.getByText('(B8 - B4) / (B8 + B4) · B8 near infrared, B4 red')).toBeInTheDocument()
-    await userEvent.click(button)
-    expect(screen.queryByText('How much green leaf is on the ground.')).toBeNull()
-  })
-
-  it('says so when the explanation is loading, failed, or missing', async () => {
-    const { rerender } = renderSummary({ status: 'ready', parcel: PARCEL })
-    await userEvent.click(screen.getByRole('button', { name: 'About NDRE' }))
-    expect(screen.getByText('Loading the explanation…')).toBeInTheDocument()
-
-    const withGuide = (guide) => (
-      <ThemeProvider>
-        <ParcelSummary status="ready" parcel={PARCEL} error={null} onRetry={noop} guide={guide} />
-      </ThemeProvider>
-    )
-    rerender(withGuide({ entries: null, error: 'Invalid query' }))
-    expect(screen.getByText('The explanation could not be loaded.')).toBeInTheDocument()
-    rerender(withGuide(READY_GUIDE))
-    expect(screen.getByText('No explanation is available for NDRE.')).toBeInTheDocument()
   })
 
   it('shows a loading state', () => {
@@ -183,10 +117,44 @@ describe('ParcelSummary', () => {
     expect(screen.getByText('This parcel has not been analysed yet.')).toBeInTheDocument()
   })
 
+  describe('a parcel that has not been analysed, found in the land records', () => {
+    it('says it is being looked up, then that it is not in the records', () => {
+      const { rerender } = renderSummary({ status: 'not-found', lookup: 'searching' })
+      expect(screen.getByRole('status')).toHaveTextContent('Finding it in the land parcel records…')
+      rerender(
+        <ThemeProvider>
+          <ParcelSummary status="not-found" parcel={null} error={null} onRetry={noop} guide={{ entries: null, error: null }} lookup="missing" />
+        </ThemeProvider>,
+      )
+      expect(screen.getByText('No land parcel with this UPI in the NLA records. Check the UPI.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Analyse this parcel' })).toBeNull()
+    })
+
+    it('offers to analyse it once it is on the map', async () => {
+      const onStart = vi.fn()
+      renderSummary({ status: 'not-found', lookup: 'found', analyse: { status: 'idle', message: null, onStart } })
+      expect(screen.getByText(/shown on the map with a quick look/)).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Analyse this parcel' }))
+      expect(onStart).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows the run, and why it failed', () => {
+      const { rerender } = renderSummary({ status: 'not-found', lookup: 'found', analyse: { status: 'running', message: null, onStart: noop } })
+      expect(screen.getByRole('status')).toHaveTextContent('Analysing this parcel… about a minute')
+      rerender(
+        <ThemeProvider>
+          <ParcelSummary status="not-found" parcel={null} error={null} onRetry={noop} guide={{ entries: null, error: null }} lookup="found" analyse={{ status: 'failed', message: 'UPI not found in NLA parcels.', onStart: noop }} />
+        </ThemeProvider>,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent('UPI not found in NLA parcels.')
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    })
+  })
+
   it('shows the error with a retry button', async () => {
     const onRetry = vi.fn()
-    renderSummary({ status: 'error', error: 'Could not reach GeoHub. Try again in a moment.', onRetry })
-    expect(screen.getByRole('alert')).toHaveTextContent('Could not reach GeoHub. Try again in a moment.')
+    renderSummary({ status: 'error', error: 'Could not reach the GIS service. Try again in a moment.', onRetry })
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not reach the GIS service. Try again in a moment.')
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetry).toHaveBeenCalledTimes(1)
   })

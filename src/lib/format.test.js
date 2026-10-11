@@ -1,5 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatHectares, formatIndex, formatMonth } from './format.js'
+import {
+  formatChange,
+  formatDate,
+  formatHectares,
+  formatIndex,
+  formatMonth,
+  formatRange,
+  formatScene,
+} from './format.js'
+
+describe('formatChange', () => {
+  it('shows the sign of a change', () => {
+    expect(formatChange(0.3)).toBe('+0.30')
+    expect(formatChange(-0.12)).toBe('-0.12')
+    expect(formatChange(0.001)).toBe('0.00')
+    expect(formatChange(-0.004)).toBe('0.00')
+    expect(formatChange(null)).toBe('–')
+  })
+})
+
+describe('formatRange', () => {
+  it('writes a period, or All dates', () => {
+    expect(formatRange({ from: Date.UTC(2026, 2, 1), to: Date.UTC(2026, 4, 1) - 1 })).toBe('1 Mar 2026 – 30 Apr 2026')
+    expect(formatRange(null)).toBe('All dates')
+  })
+})
+
+describe('formatScene', () => {
+  it('names the image date and the tile cloud share', () => {
+    expect(formatScene({ date: Date.UTC(2026, 3, 28, 8), cloud: 0 })).toBe('Image 28 Apr 2026 · cloud 0%')
+    expect(formatScene({ date: Date.UTC(2026, 3, 28, 8), cloud: 0.126 })).toBe('Image 28 Apr 2026 · cloud 13%')
+    expect(formatScene({ date: Date.UTC(2026, 3, 28, 8), cloud: null })).toBe('Image 28 Apr 2026')
+    expect(formatScene(null)).toBe('–')
+  })
+})
 
 describe('formatIndex', () => {
   it('rounds to two decimals', () => {

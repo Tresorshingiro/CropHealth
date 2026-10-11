@@ -15,6 +15,11 @@
   --accent: 15 122 77;
   --accent-ink: 255 255 255;
   --danger: 196 48 48;
+  /* Status words and rings: the hues of the health dots (HEALTH_COLORS), a
+     shade darker on the light theme so the words stay readable on white. */
+  --status-good: 4 120 87;
+  --status-moderate: 180 83 9;
+  --status-poor: 220 38 38;
 }
 
 .dark {
@@ -29,6 +34,19 @@
   --accent: 52 211 153;
   --accent-ink: 11 11 11;
   --danger: 230 103 103;
+  /* Exactly the health dots' colours (HEALTH_COLORS in lib/mapLayers.js). */
+  --status-good: 16 185 129;
+  --status-moderate: 245 158 11;
+  --status-poor: 239 68 68;
+}
+
+/* Every size is in rem, so this one value sets how dense the app is. Lexend
+   is a wide face: from laptop width up, 14px reads like other apps at 16px.
+   Phones keep 16px, which also stops iOS zooming into focused inputs. */
+@media (min-width: 1024px) {
+  html {
+    font-size: 14px;
+  }
 }
 
 body {
@@ -42,7 +60,11 @@ body {
     @apply border border-line/60 bg-surface/90 backdrop-blur-xl;
   }
   .panel {
-    @apply rounded-2xl border border-line bg-surface;
+    @apply rounded-3xl border border-line/70 bg-surface;
+  }
+  /* Cards after the reference design: rounded, softly filled, no hard border. */
+  .card {
+    @apply rounded-3xl bg-raised/60;
   }
   .btn-primary {
     @apply inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60;
@@ -63,7 +85,7 @@ body {
 .esri-view .esri-attribution {
   background-color: rgb(var(--surface) / 0.85);
   color: rgb(var(--ink-2));
-  @apply text-[10px];
+  @apply text-[0.625rem];
 }
 .esri-view .esri-attribution a {
   color: inherit;

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import LayersPanel from './LayersPanel.jsx'
 
-const SETTINGS = { basemap: 'satellite', sentinel: 'none', opacity: 1, analysed: true, land: true }
+const SETTINGS = { basemap: 'satellite', sentinel: 'none', opacity: 1, analysed: true, land: true, districts: true }
 
 function renderPanel(settings = {}) {
   const onChange = vi.fn()
@@ -19,8 +19,9 @@ describe('LayersPanel', () => {
     expect(within(base).getByRole('radio', { name: /Satellite/ })).not.toBeChecked()
     const sentinel = screen.getByRole('radiogroup', { name: 'Sentinel-2 layer' })
     expect(within(sentinel).getByRole('radio', { name: /NDVI/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'Analysed parcels' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Areas of interest' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: /Land parcels/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /District boundaries/ })).toBeChecked()
   })
 
   it('reports a new base map and a new Sentinel-2 layer', async () => {
@@ -33,10 +34,12 @@ describe('LayersPanel', () => {
 
   it('reports the outline toggles', async () => {
     const onChange = renderPanel()
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Analysed parcels' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Areas of interest' }))
     expect(onChange).toHaveBeenLastCalledWith({ analysed: false })
     await userEvent.click(screen.getByRole('checkbox', { name: /Land parcels/ }))
     expect(onChange).toHaveBeenLastCalledWith({ land: false })
+    await userEvent.click(screen.getByRole('checkbox', { name: /District boundaries/ }))
+    expect(onChange).toHaveBeenLastCalledWith({ districts: false })
   })
 
   it('sets the opacity of the Sentinel-2 layer, and only when one is shown', () => {

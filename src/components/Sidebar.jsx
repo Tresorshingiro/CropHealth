@@ -1,5 +1,6 @@
 import ThemeToggle from '../theme/ThemeToggle.jsx'
-import ParcelList from './ParcelList.jsx'
+import BrandMark from './BrandMark.jsx'
+import DistrictList from './DistrictList.jsx'
 
 const initials = (name) =>
   String(name || '?')
@@ -10,12 +11,11 @@ const initials = (name) =>
     .join('')
 
 /**
- * Brand, the analysed parcels and the account. A fixed column on wide
+ * Brand, the districts with areas of interest, the parcels opened last, and the account. A fixed column on wide
  * screens; on small ones it slides in over the page when `open`.
  */
 export default function Sidebar({ open, hidden, onClose, user, onSignOut, list }) {
   const name = user?.fullName || user?.username
-  const count = list.status === 'ready' ? list.parcels.length : null
 
   return (
     <aside
@@ -23,21 +23,14 @@ export default function Sidebar({ open, hidden, onClose, user, onSignOut, list }
       data-open={open}
       // Off-screen on a small display: keep it out of the tab order too.
       inert={hidden}
-      className={`fixed inset-y-0 left-0 z-40 flex w-80 max-w-[88vw] flex-col border-r border-line bg-surface transition-transform duration-300 motion-reduce:transition-none lg:static lg:z-auto lg:max-w-none lg:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-40 flex w-64 max-w-[88vw] flex-col border-r border-line bg-surface transition-transform duration-300 motion-reduce:transition-none lg:static lg:z-auto lg:max-w-none lg:translate-x-0 ${
         open ? 'translate-x-0 shadow-float' : '-translate-x-full'
       }`}
     >
-      <div className="flex items-center justify-between gap-3 px-5 pb-4 pt-5">
-        <div className="flex items-center gap-3">
-          <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-accent-ink">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 21v-9M12 12c0-4 2.5-7 7-7 0 4.5-3 7-7 7zM12 15c0-3-2-5.5-6-5.5 0 3.5 2.5 5.5 6 5.5z" />
-            </svg>
-          </span>
-          <div className="leading-tight">
-            <p className="font-display text-base font-semibold tracking-tight">Crop Health</p>
-            <p className="text-xs text-ink-2">GeoHub Rwanda</p>
-          </div>
+      <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <BrandMark />
+          <p className="font-display text-[0.9375rem] font-semibold leading-tight tracking-tight">Crop Health Monitoring</p>
         </div>
         <button type="button" className="icon-btn lg:hidden" onClick={onClose} aria-label="Close menu">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -46,12 +39,8 @@ export default function Sidebar({ open, hidden, onClose, user, onSignOut, list }
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4">
-        <div className="flex items-baseline justify-between px-1">
-          <h2 className="font-display text-sm font-semibold">Analysed parcels</h2>
-          {count !== null && <span className="text-xs text-ink-2">{count}</span>}
-        </div>
-        <ParcelList {...list} />
+      <div className="flex min-h-0 flex-1 flex-col px-2">
+        <DistrictList {...list} />
       </div>
 
       <div className="mt-3 flex items-center gap-3 border-t border-line px-4 py-3">

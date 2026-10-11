@@ -1,6 +1,7 @@
-// Requests go to this app's own origin; the access server adds the portal
-// token and forwards them to GeoHub.
-export const SERVICE_URL = '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer'
+// Requests go to this app's own origin and name a table (parcels,
+// observations, guide); the access server picks its GeoHub layer, adds the
+// portal token and forwards them.
+export const DATA_URL = '/api/data'
 
 const PAGE_SIZE = 1000
 
@@ -12,7 +13,7 @@ export class SessionExpiredError extends Error {
 }
 
 export class PortalError extends Error {
-  constructor(message = 'GeoHub could not answer the request.') {
+  constructor(message = 'The GIS service could not answer the request.') {
     super(message)
     this.name = 'PortalError'
   }
@@ -25,12 +26,12 @@ export class NetworkError extends Error {
   }
 }
 
-/** One query against a layer or table of the crop health service. */
-export async function queryLayer(layerId, params, { signal } = {}) {
+/** One query against a table of the crop health data. */
+export async function queryLayer(table, params, { signal } = {}) {
   const search = new URLSearchParams({ f: 'json', ...params })
   let res
   try {
-    res = await fetch(`${SERVICE_URL}/${layerId}/query?${search}`, { credentials: 'same-origin', signal })
+    res = await fetch(`${DATA_URL}/${table}/query?${search}`, { credentials: 'same-origin', signal })
   } catch (err) {
     if (err?.name === 'AbortError') throw err
     throw new NetworkError()
@@ -41,23 +42,23 @@ export async function queryLayer(layerId, params, { signal } = {}) {
   try {
     data = await res.json()
   } catch {
-    throw new PortalError('GeoHub returned an unreadable response.')
+    throw new PortalError('The GIS service returned an unreadable response.')
   }
   // ArcGIS sends { error: { message } }; the access server sends { error: '...' }.
   const error = data?.error
   if (error || !res.ok) {
     const message = typeof error === 'string' ? error : error?.message
-    throw new PortalError(message || `GeoHub request failed (${res.status}).`)
+    throw new PortalError(message || `The GIS service request failed (${res.status}).`)
   }
   return data
 }
 
 /** Every page of a query, up to maxPages. `truncated` says rows were left out. */
-export async function queryAll(layerId, params, { signal, maxPages = 5 } = {}) {
+export async function queryAll(table, params, { signal, maxPages = 5 } = {}) {
   const features = []
   for (let page = 0; page < maxPages; page += 1) {
     const data = await queryLayer(
-      layerId,
+      table,
       { ...params, resultOffset: String(page * PAGE_SIZE), resultRecordCount: String(PAGE_SIZE) },
       { signal },
     )

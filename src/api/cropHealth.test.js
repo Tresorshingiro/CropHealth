@@ -45,7 +45,7 @@ describe('getParcel', () => {
     const parcel = await getParcel('5/05/10/02/1939')
 
     const url = sentUrl()
-    expect(url.pathname).toBe('/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/0/query')
+    expect(url.pathname).toBe('/api/data/parcels/query')
     expect(url.searchParams.get('where')).toBe("upi = '5/05/10/02/1939'")
     expect(url.searchParams.get('returnGeometry')).toBe('true')
     expect(url.searchParams.get('outSR')).toBe('4326')
@@ -130,7 +130,7 @@ describe('getObservations', () => {
       }),
     )
     const rows = await getObservations('5/02/06/06/1702')
-    expect(sentUrl().pathname).toMatch(/\/FeatureServer\/1\/query$/)
+    expect(sentUrl().pathname).toBe('/api/data/observations/query')
     expect(sentUrl().searchParams.get('where')).toBe("upi = '5/02/06/06/1702'")
     expect(rows).toEqual([
       { date: 1754265600000, ndvi: 0.3931, ndmi: -0.0896, ndre: null, clearShare: 0.8 },
@@ -153,7 +153,7 @@ describe('getObservations', () => {
 
 describe('listParcels', () => {
   const row = (n) => ({
-    attributes: { upi: `5/05/10/02/${n}`, district: 'Kirehe', latest_date: 1790294400000 },
+    attributes: { upi: `5/05/10/02/${n}`, district: 'Kirehe', latest_date: 1790294400000, ndvi: 0.31, ndmi: -0.1, ndre: 'n/a' },
     geometry: { rings: [[[30, -2], [30.1, -2], [30, -2.1], [30, -2]]] },
   })
 
@@ -167,10 +167,15 @@ describe('listParcels', () => {
     expect(sentUrl(1).searchParams.get('resultOffset')).toBe('1000')
     expect(result.truncated).toBe(false)
     expect(result.parcels.map((p) => p.upi)).toEqual(['5/05/10/02/1', '5/05/10/02/2'])
+    // The latest values come along, so the overview can rate every parcel from one request.
+    expect(sentUrl(0).searchParams.get('outFields')).toBe('upi,district,latest_date,ndvi,ndmi,ndre')
     expect(result.parcels[0]).toEqual({
       upi: '5/05/10/02/1',
       district: 'Kirehe',
       latestDate: 1790294400000,
+      ndvi: 0.31,
+      ndmi: -0.1,
+      ndre: null,
       rings: [[[30, -2], [30.1, -2], [30, -2.1], [30, -2]]],
     })
   })
@@ -213,7 +218,7 @@ describe('getIndexGuide', () => {
     const first = await getIndexGuide()
     const second = await getIndexGuide()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(sentUrl().pathname).toMatch(/\/FeatureServer\/2\/query$/)
+    expect(sentUrl().pathname).toBe('/api/data/guide/query')
     expect(second).toBe(first)
     expect(first[0]).toEqual({
       code: 'NDVI',

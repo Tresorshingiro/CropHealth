@@ -1,7 +1,30 @@
 // What the map can show. Every service here is public: the browser loads it
 // directly, with no token.
+import RWANDA from './rwanda.json'
 
 const ESRI_TILES = 'https://services.arcgisonline.com/ArcGIS/rest/services'
+
+// Rwanda's border, from Esri's World Countries layer (Living Atlas), kept with
+// the app. The reference layers (every country's borders and place names) are
+// left out, so Rwanda's is the only border drawn.
+export const RWANDA_RINGS = RWANDA.rings
+
+const ringBounds = (ring) => ({
+  xmin: Math.min(...ring.map(([x]) => x)),
+  ymin: Math.min(...ring.map(([, y]) => y)),
+  xmax: Math.max(...ring.map(([x]) => x)),
+  ymax: Math.max(...ring.map(([, y]) => y)),
+})
+const bounds = ringBounds(RWANDA_RINGS[0])
+const MARGIN = 0.06 // degrees, about 6 km, so the border is not on the map's edge
+
+export const RWANDA_EXTENT = {
+  xmin: bounds.xmin - MARGIN,
+  ymin: bounds.ymin - MARGIN,
+  xmax: bounds.xmax + MARGIN,
+  ymax: bounds.ymax + MARGIN,
+  spatialReference: { wkid: 4326 },
+}
 
 /**
  * Base maps as tiled services. `plain` follows the app theme. Esri's raster
@@ -13,7 +36,7 @@ export const BASEMAPS = [
     label: 'Satellite',
     hint: 'Sharpest picture, but it can be years old',
     base: () => [`${ESRI_TILES}/World_Imagery/MapServer`],
-    reference: () => [`${ESRI_TILES}/Reference/World_Boundaries_and_Places/MapServer`],
+    reference: () => [],
   },
   {
     id: 'streets',
@@ -27,7 +50,7 @@ export const BASEMAPS = [
     label: 'Plain',
     hint: 'A quiet background for the imagery and outlines',
     base: (theme) => [`${ESRI_TILES}/Canvas/World_${theme === 'dark' ? 'Dark' : 'Light'}_Gray_Base/MapServer`],
-    reference: (theme) => [`${ESRI_TILES}/Canvas/World_${theme === 'dark' ? 'Dark' : 'Light'}_Gray_Reference/MapServer`],
+    reference: () => [],
   },
 ]
 
@@ -51,6 +74,13 @@ const NDMI_COLORS = [
   '#00008c',
 ]
 
+// Our own ramp for NDRE: the service has it only as raw values. Brown to green
+// over -0.2 to 0.6, where nearly all crop readings fall.
+const NDRE_COLORS = ['#8c510a', '#d8b365', '#f6e8c3', '#c7e9c0', '#74c476', '#238b45', '#00441b']
+
+const NDVI_SCALE = { colors: NDVI_COLORS, min: -1, max: 1, low: 'Bare or sparse', high: 'Dense green' }
+const NDMI_SCALE = { colors: NDMI_COLORS, min: -1, max: 1, low: 'Dry', high: 'Moist' }
+
 /** Sentinel-2 renderings drawn over the base map (raster function names as the service publishes them). */
 export const SENTINEL_LAYERS = [
   { id: 'none', label: 'None', functionName: null },
@@ -65,14 +95,31 @@ export const SENTINEL_LAYERS = [
     label: 'NDVI',
     hint: 'Green cover',
     functionName: 'NDVI Colormap',
-    scale: { colors: NDVI_COLORS, low: 'Bare or sparse', high: 'Dense green' },
+    scale: NDVI_SCALE,
   },
   {
     id: 'ndmi',
     label: 'NDMI',
     hint: 'Moisture',
     functionName: 'NDMI Colorized',
-    scale: { colors: NDMI_COLORS, low: 'Dry', high: 'Moist' },
+    scale: NDMI_SCALE,
+  },
+]
+
+/**
+ * The index pixels drawn inside the selected plot. NDVI and NDMI
+ * come coloured by the service; NDRE ("NDVI - with VRE Raw", (B8 - B5) / (B8 + B5))
+ * comes as raw values in `lerc` and is coloured in the browser.
+ */
+export const PLOT_INDICES = [
+  { id: 'ndvi', label: 'NDVI', functionName: 'NDVI Colormap', format: 'jpgpng', scale: NDVI_SCALE },
+  { id: 'ndmi', label: 'NDMI', functionName: 'NDMI Colorized', format: 'jpgpng', scale: NDMI_SCALE },
+  {
+    id: 'ndre',
+    label: 'NDRE',
+    functionName: 'NDVI - with VRE Raw',
+    format: 'lerc',
+    scale: { colors: NDRE_COLORS, min: -0.2, max: 0.6, low: 'Little chlorophyll', high: 'Much chlorophyll' },
   },
 ]
 
@@ -99,10 +146,29 @@ export const LAIS_LAYER_URLS = LAIS_SERVICES.map(([service, layer]) => `${LAIS_B
 /** Land parcels are drawn only from this scale in, where single fields can be told apart. */
 export const LAIS_MIN_SCALE = 20000
 
-// Outline colours, as [r, g, b] for the map and as CSS for the legend. Amber,
-// cyan and white each stay visible over the photo and over both index maps.
+// Rwanda's 30 districts (Admin Boundaries 2022), a public GeoHub layer the
+// browser loads directly, as the GIS team's notebook does.
+export const DISTRICTS_URL = 'https://gh.space.gov.rw/server/rest/services/Admin_Boundaries/FeatureServer/1'
+/** District names are written between these scales: not over the whole country, not over single fields. */
+export const DISTRICT_LABEL_SCALES = { min: 1500000, max: 40000 }
+
+// Outline colours, as [r, g, b] (and alpha) for the map and as CSS for the
+// legend. Cyan stays visible over the photo and both index maps; land parcels
+// are a faint white so they sit behind the fields; districts a dashed, softer
+// white, under the solid country border and told from the parcels by the dash.
 export const OUTLINES = {
-  analysed: { rgb: [251, 191, 36], css: 'rgb(251 191 36)' },
   selected: { rgb: [0, 229, 255], css: 'rgb(0 229 255)' },
-  land: { rgb: [255, 255, 255], css: 'rgb(255 255 255 / 0.7)' },
+  land: { rgb: [255, 255, 255], alpha: 0.35, css: 'rgb(255 255 255 / 0.35)' },
+  district: { rgb: [255, 255, 255], alpha: 0.6, css: 'rgb(255 255 255 / 0.6)' },
 }
+
+// Analysed parcels coloured by crop health, on the map and in the overview.
+// Bright enough to read over imagery and over both themes; the verdict word
+// always goes with the colour.
+export const HEALTH_COLORS = {
+  good: { rgb: [16, 185, 129], css: 'rgb(16 185 129)', label: 'Good' },
+  moderate: { rgb: [245, 158, 11], css: 'rgb(245 158 11)', label: 'Moderate' },
+  poor: { rgb: [239, 68, 68], css: 'rgb(239 68 68)', label: 'Poor' },
+  unrated: { rgb: [148, 163, 184], css: 'rgb(148 163 184)', label: 'Not rated' },
+}
+export const HEALTH_ORDER = ['good', 'moderate', 'poor', 'unrated']

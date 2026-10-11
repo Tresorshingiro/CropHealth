@@ -62,6 +62,12 @@ describe('readConfig', () => {
     expect(config.serverUrl).toBe('https://portal.test/server')
   })
 
+  it('reads the data from the referenced services unless DATA_SOURCE says otherwise', () => {
+    expect(config.dataSource).toBe('referenced')
+    expect(readConfig({ DATA_SOURCE: ' Hosted ' }).dataSource).toBe('hosted')
+    expect(() => readConfig({ DATA_SOURCE: 'elsewhere' })).toThrow(/DATA_SOURCE/)
+  })
+
   it('refuses to run in production without a real session secret', () => {
     expect(() => readConfig({ NODE_ENV: 'production' })).toThrow(/SESSION_SECRET/)
     expect(() =>
@@ -173,7 +179,7 @@ describe('session', () => {
 })
 
 describe('service proxy', () => {
-  const SERVICE = '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer'
+  const SERVICE = '/api/data'
 
   /** Sign in against the fake portal, with `service` answering feature-service calls. */
   async function signedIn(service) {
@@ -201,21 +207,53 @@ describe('service proxy', () => {
 
   it('forwards a query with the session token and the bound referer', async () => {
     const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({ features: [{ attributes: { upi: 'x' } }] }))
-    const res = await fetch(`${base}${SERVICE}/0/query?where=1%3D1&f=json&token=EVIL`, { headers: { cookie } })
+    const res = await fetch(`${base}${SERVICE}/parcels/query?where=1%3D1&f=json&token=EVIL`, { headers: { cookie } })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ features: [{ attributes: { upi: 'x' } }] })
 
     const [call] = serviceCalls()
     const sent = new URL(call.url)
-    expect(sent.pathname).toBe('/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/0/query')
+    expect(sent.pathname).toBe('/server/rest/services/WatchedParcels/FeatureServer/0/query')
     expect(sent.searchParams.get('where')).toBe('1=1')
     expect(sent.searchParams.getAll('token')).toEqual(['TOK'])
     expect(call.init.headers.referer).toBe(base)
   })
 
+  it('sends each table to its layer of the chosen data source', async () => {
+    const tables = {
+      hosted: {
+        parcels: '/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/0/query',
+        observations: '/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/1/query',
+        guide: '/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/2/query',
+      },
+      referenced: {
+        parcels: '/server/rest/services/WatchedParcels/FeatureServer/0/query',
+        observations: '/server/rest/services/ParcelObservations/FeatureServer/0/query',
+        guide: '/server/rest/services/IndexGuide/FeatureServer/0/query',
+      },
+    }
+    for (const [source, paths] of Object.entries(tables)) {
+      const sourceConfig = readConfig({ PORTAL_URL: 'https://portal.test/portal', SESSION_SECRET: 'test-secret', DATA_SOURCE: source })
+      const ctx = await start(
+        (url, init) => (url.startsWith('https://portal.test/server/') ? jsonResponse({ features: [] }) : portal(url, init)),
+        sourceConfig,
+      )
+      const cookie = cookieOf(await login(ctx.base, 'tresor', 'right'))
+      for (const [table, path] of Object.entries(paths)) {
+        const res = await fetch(`${ctx.base}${SERVICE}/${table}/query?where=1%3D1`, { headers: { cookie } })
+        expect(res.status, `${source} ${table}`).toBe(200)
+        const sent = new URL(ctx.calls.at(-1).url)
+        expect(sent.pathname, `${source} ${table}`).toBe(path)
+      }
+      server.closeAllConnections()
+      await new Promise((resolve) => server.close(resolve))
+      server = null
+    }
+  })
+
   it('refuses a request with no session and does not call GeoHub', async () => {
     const { base, serviceCalls } = await signedIn(() => jsonResponse({}))
-    const res = await fetch(`${base}${SERVICE}/0/query?f=json`)
+    const res = await fetch(`${base}${SERVICE}/parcels/query?f=json`)
     expect(res.status).toBe(401)
     expect(serviceCalls()).toHaveLength(0)
   })
@@ -223,11 +261,12 @@ describe('service proxy', () => {
   it('returns 404 for any other service', async () => {
     const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({}))
     const paths = [
-      '/api/gh/server/rest/services/Hosted/Other/FeatureServer/0/query',
-      '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_ViewX/FeatureServer/0/query',
-      '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServerX/0',
-      '/api/gh/server/admin',
-      '/api/gh/server',
+      // The old pass-through route is gone: GeoHub paths are never taken from the browser.
+      '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer/0/query',
+      '/api/data/other/query',
+      '/api/data/parcelsX/query',
+      '/api/data/Parcels/query',
+      '/api/dataX/parcels/query',
     ]
     for (const path of paths) {
       const res = await fetch(`${base}${path}`, { headers: { cookie } })
@@ -252,7 +291,7 @@ describe('service proxy', () => {
 
   it('refuses methods other than GET', async () => {
     const { base, cookie, serviceCalls } = await signedIn(() => jsonResponse({}))
-    const res = await fetch(`${base}${SERVICE}/0/query`, { method: 'POST', headers: { cookie }, body: 'f=json' })
+    const res = await fetch(`${base}${SERVICE}/parcels/query`, { method: 'POST', headers: { cookie }, body: 'f=json' })
     expect(res.status).toBe(405)
     expect(serviceCalls()).toHaveLength(0)
   })
@@ -260,7 +299,7 @@ describe('service proxy', () => {
   it('turns an ArcGIS invalid-token answer into 401 and clears the cookie', async () => {
     for (const code of [498, 499]) {
       const { base, cookie } = await signedIn(() => jsonResponse({ error: { code, message: 'Invalid token.' } }))
-      const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
+      const res = await fetch(`${base}${SERVICE}/parcels/query?f=json`, { headers: { cookie } })
       expect(res.status).toBe(401)
       expect(res.headers.get('set-cookie')).toMatch(/crophealth_session=;.*Max-Age=0/)
       server.closeAllConnections()
@@ -271,7 +310,7 @@ describe('service proxy', () => {
 
   it('passes other ArcGIS errors through unchanged', async () => {
     const { base, cookie } = await signedIn(() => jsonResponse({ error: { code: 400, message: 'Invalid query' } }))
-    const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
+    const res = await fetch(`${base}${SERVICE}/parcels/query?f=json`, { headers: { cookie } })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ error: { code: 400, message: 'Invalid query' } })
   })
@@ -280,13 +319,13 @@ describe('service proxy', () => {
     const { base, cookie } = await signedIn(() => {
       throw new Error('ECONNRESET')
     })
-    const res = await fetch(`${base}${SERVICE}/0/query?f=json`, { headers: { cookie } })
+    const res = await fetch(`${base}${SERVICE}/parcels/query?f=json`, { headers: { cookie } })
     expect(res.status).toBe(502)
   })
 })
 
 describe('hardening', () => {
-  const SERVICE = '/api/gh/server/rest/services/Hosted/RW_CropHealth_V2_View/FeatureServer'
+  const SERVICE = '/api/data'
   const isService = (url) => url.startsWith('https://portal.test/server/')
 
   async function signedIn(service = () => jsonResponse({ features: [] })) {
@@ -307,26 +346,27 @@ describe('hardening', () => {
     })
   }
 
-  it('forwards only layer queries, not other paths inside the service', async () => {
+  it('forwards only queries on the three named tables', async () => {
     const { base, cookie, serviceCalls } = await signedIn()
     const paths = [
       `${SERVICE}`,
-      `${SERVICE}/0`,
-      `${SERVICE}/3/query`,
-      `${SERVICE}/0/queryRelatedRecords`,
+      `${SERVICE}/parcels`,
+      `${SERVICE}/0/query`,
+      `${SERVICE}/runlog/query`,
+      `${SERVICE}/parcels/queryRelatedRecords`,
       `${SERVICE}/..;/..;/Other/FeatureServer/0/query`,
       `${SERVICE}/..%2f..%2fOther/FeatureServer/0/query`,
       `${SERVICE}/..%5c..%5cOther/FeatureServer/0/query`,
       `${SERVICE}/%252e%252e/%252e%252e/Other/FeatureServer/0/query`,
-      `${SERVICE}/0/query/..%2f..%2fadmin`,
+      `${SERVICE}/parcels/query/..%2f..%2fadmin`,
     ]
     for (const path of paths) {
       const res = await rawGet(base, path, cookie)
       expect(res.status, path).toBe(404)
     }
     expect(serviceCalls()).toHaveLength(0)
-    for (const layer of [0, 1, 2]) {
-      const res = await rawGet(base, `${SERVICE}/${layer}/query?where=1%3D1`, cookie)
+    for (const table of ['parcels', 'observations', 'guide']) {
+      const res = await rawGet(base, `${SERVICE}/${table}/query?where=1%3D1`, cookie)
       expect(res.status).toBe(200)
     }
     expect(serviceCalls()).toHaveLength(3)
@@ -334,7 +374,7 @@ describe('hardening', () => {
 
   it('drops token and callback parameters in any letter case and always asks for JSON', async () => {
     const { base, cookie, serviceCalls } = await signedIn()
-    const res = await fetch(`${base}${SERVICE}/0/query?where=1%3D1&Token=EVIL&TOKEN=E2&callback=x&f=html`, {
+    const res = await fetch(`${base}${SERVICE}/parcels/query?where=1%3D1&Token=EVIL&TOKEN=E2&callback=x&f=html`, {
       headers: { cookie },
     })
     expect(res.headers.get('content-type')).toMatch(/^application\/json/)
@@ -349,10 +389,10 @@ describe('hardening', () => {
     const { base, cookie } = await signedIn(
       () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
     )
-    const res = await fetch(`${base}${SERVICE}/0/query`, { headers: { cookie } })
+    const res = await fetch(`${base}${SERVICE}/parcels/query`, { headers: { cookie } })
     expect(res.status).toBe(502)
     expect(res.headers.get('content-type')).toMatch(/^application\/json/)
-    expect(await res.json()).toEqual({ error: 'GeoHub could not answer the request.' })
+    expect(await res.json()).toEqual({ error: 'The GIS service could not answer the request.' })
   })
 
   it('does not expose the portal token in the cookie value', async () => {
@@ -411,6 +451,171 @@ describe('hardening', () => {
     )
     const res = await login(base, 'tresor', 'right')
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'Could not reach GeoHub. Try again in a moment.' })
+    expect(await res.json()).toEqual({ error: 'Could not reach the GIS service. Try again in a moment.' })
+  })
+})
+
+describe('analysis tool', () => {
+  const TOOL = 'https://portal.test/notebook/rest/services/abc/GPServer/ParcelIndices'
+  const toolConfig = readConfig({ PORTAL_URL: 'https://portal.test/portal', SESSION_SECRET: 'test-secret', ANALYSIS_URL: TOOL })
+
+  const tool = (answers) => (url, init = {}) => {
+    if (url.startsWith(TOOL)) return answers(url, init)
+    return portal(url, init)
+  }
+  const signedIn = async (answers) => {
+    const { base, calls } = await start(tool(answers), toolConfig)
+    const cookie = cookieOf(await login(base, 'tresor', 'right'))
+    return { base, calls, cookie }
+  }
+  const submit = (base, cookie, body) =>
+    fetch(`${base}/api/analysis`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify(body),
+    })
+
+  it('needs a session', async () => {
+    const { base } = await start(tool(() => jsonResponse({})), toolConfig)
+    expect((await submit(base, '', { upi: '5/05/06/02/4219' })).status).toBe(401)
+  })
+
+  it('starts a job for one UPI, with the session token and no drawn area', async () => {
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({ jobId: 'j0a1b2', jobStatus: 'esriJobSubmitted' }))
+    const res = await submit(base, cookie, { upi: ' 5/05/06/02/4219 ' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ jobId: 'j0a1b2', status: 'running' })
+
+    const call = calls.find((c) => c.url.startsWith(TOOL))
+    expect(call.url).toBe(`${TOOL}/submitJob`)
+    expect(call.init.method).toBe('POST')
+    const body = new URLSearchParams(call.init.body)
+    expect(body.get('UPI')).toBe('5/05/06/02/4219')
+    expect(body.get('AREA')).toBe('')
+    expect(body.get('AREA_NAME')).toBeNull()
+    expect(body.get('f')).toBe('json')
+    expect(body.get('token')).toBe('TOK')
+    expect(call.init.headers.referer).toMatch(/^http:\/\/127\.0\.0\.1:/)
+  })
+
+  const FIELD = [[[30.8, -2.2], [30.801, -2.2], [30.801, -2.199], [30.8, -2.2]]]
+
+  it('starts a job for a drawn field, sent as a WGS84 feature set with its name', async () => {
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({ jobId: 'j9', jobStatus: 'esriJobSubmitted' }))
+    const res = await submit(base, cookie, { area: { rings: FIELD }, name: ' North field ' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ jobId: 'j9', status: 'running' })
+    const body = new URLSearchParams(calls.find((c) => c.url.startsWith(TOOL)).init.body)
+    expect(body.get('UPI')).toBe('')
+    expect(body.get('AREA_NAME')).toBe('North field')
+    expect(JSON.parse(body.get('AREA'))).toEqual({
+      geometryType: 'esriGeometryPolygon',
+      spatialReference: { wkid: 4326 },
+      features: [{ geometry: { rings: FIELD, spatialReference: { wkid: 4326 } }, attributes: {} }],
+    })
+    expect(body.get('token')).toBe('TOK')
+  })
+
+  it('refuses a drawn field that is not one small closed ring inside Rwanda, or a bad name', async () => {
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({}))
+    const open = [[[30.8, -2.2], [30.801, -2.2], [30.801, -2.199], [30.8, -2.199]]]
+    const few = [[[30.8, -2.2], [30.801, -2.2], [30.8, -2.2]]]
+    const outside = [[[32.5, 0.3], [32.501, 0.3], [32.501, 0.301], [32.5, 0.3]]]
+    const wide = [[[30.8, -2.2], [30.9, -2.2], [30.9, -2.199], [30.8, -2.2]]]
+    const text = [[[30.8, -2.2], ['30.801', -2.2], [30.801, -2.199], [30.8, -2.2]]]
+    const two = [FIELD[0], FIELD[0]]
+    const many = [[...Array.from({ length: 501 }, (_, i) => [30.8 + i * 0.00001, -2.2]), [30.8, -2.2]]]
+    for (const rings of [open, few, outside, wide, text, two, many]) {
+      expect((await submit(base, cookie, { area: { rings }, name: 'North field' })).status).toBe(400)
+    }
+    for (const name of ['', '   ', 'a'.repeat(27), "North' OR 1=1", ' two  spaces', 42]) {
+      expect((await submit(base, cookie, { area: { rings: FIELD }, name })).status).toBe(400)
+    }
+    expect((await submit(base, cookie, { upi: '5/05/06/02/4219', area: { rings: FIELD }, name: 'North field' })).status).toBe(400)
+    expect(calls.some((c) => c.url.startsWith(TOOL))).toBe(false)
+  })
+
+  it('runs a drawn field again by its id, which the tool reads from the UPI box', async () => {
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({ jobId: 'j7', jobStatus: 'esriJobSubmitted' }))
+    for (const id of ['AREA North field', 'AREA-1A2B3C4D']) {
+      const res = await submit(base, cookie, { upi: ` ${id} ` })
+      expect(res.status).toBe(200)
+      const body = new URLSearchParams(calls.filter((c) => c.url.startsWith(TOOL)).at(-1).init.body)
+      expect(body.get('UPI')).toBe(id)
+      expect(body.get('AREA')).toBe('')
+    }
+  })
+
+  it('refuses anything but a UPI or a drawn field id, and asks the tool nothing', async () => {
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({}))
+    const bad = ['', 'AREA', 'AREA ', `AREA ${'a'.repeat(27)}`, "AREA North' OR 1=1", 'AREA-XYZ', 'area north', "5/05/06/02/1' OR 1=1", '5/05/06/02/4219/9', 42]
+    for (const upi of bad) {
+      expect((await submit(base, cookie, { upi })).status).toBe(400)
+    }
+    expect(calls.some((c) => c.url.startsWith(TOOL))).toBe(false)
+  })
+
+  it('reports a job as running, succeeded or failed with the tool\'s own message', async () => {
+    const answers = {
+      jrun: { jobId: 'jrun', jobStatus: 'esriJobExecuting', messages: [] },
+      jok: { jobId: 'jok', jobStatus: 'esriJobSucceeded', messages: [{ type: 'esriJobMessageTypeInformative', description: 'Done' }] },
+      jbad: {
+        jobId: 'jbad',
+        jobStatus: 'esriJobFailed',
+        messages: [
+          { type: 'esriJobMessageTypeInformative', description: 'Reading imagery' },
+          { type: 'esriJobMessageTypeError', description: 'UPI not found in NLA parcels.' },
+        ],
+      },
+    }
+    const { base, calls, cookie } = await signedIn((url) => jsonResponse(answers[new URL(url).pathname.split('/').pop()]))
+    const status = async (id) => (await fetch(`${base}/api/analysis/${id}`, { headers: { cookie } })).json()
+    expect(await status('jrun')).toEqual({ jobId: 'jrun', status: 'running' })
+    expect(await status('jok')).toEqual({ jobId: 'jok', status: 'succeeded' })
+    expect(await status('jbad')).toEqual({ jobId: 'jbad', status: 'failed', message: 'UPI not found in NLA parcels.' })
+
+    const call = calls.find((c) => c.url.includes('/jobs/jrun'))
+    const url = new URL(call.url)
+    expect(url.origin + url.pathname).toBe(`${TOOL}/jobs/jrun`)
+    expect(url.searchParams.get('f')).toBe('json')
+    expect(url.searchParams.get('token')).toBe('TOK')
+  })
+
+  it('says plainly when the account may not run the tool', async () => {
+    const { base, cookie } = await signedIn(() =>
+      jsonResponse({ error: { code: 403, message: 'You do not have permissions to access this resource or perform this operation.' } }),
+    )
+    const res = await submit(base, cookie, { upi: '5/05/06/02/4219' })
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('Your account is not allowed to run the analysis. Ask the GIS team for access.')
+  })
+
+  it('signs the user out when the token has expired', async () => {
+    const { base, cookie } = await signedIn(() => jsonResponse({ error: { code: 498, message: 'Invalid token.' } }))
+    expect((await submit(base, cookie, { upi: '5/05/06/02/4219' })).status).toBe(401)
+  })
+
+  it('follows a job whose id has dashes or underscores, as Notebook Server ids do', async () => {
+    const id = 'j2c4e-9f1a_b7d3-4e21'
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({ jobId: id, jobStatus: 'esriJobExecuting' }))
+    const res = await fetch(`${base}/api/analysis/${id}`, { headers: { cookie } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ jobId: id, status: 'running' })
+    expect(calls.some((c) => c.url.startsWith(`${TOOL}/jobs/${id}?`))).toBe(true)
+  })
+
+  it('says so when the tool starts no job', async () => {
+    const { base, cookie } = await signedIn(() => jsonResponse({ jobStatus: 'esriJobFailed' }))
+    const res = await submit(base, cookie, { upi: '5/05/06/02/4219' })
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toBe('The analysis tool did not start a job.')
+  })
+
+  it('answers 404 for a malformed job id and 405 for other methods', async () => {
+    const { base, calls, cookie } = await signedIn(() => jsonResponse({}))
+    expect((await fetch(`${base}/api/analysis/..%2Fsubmit`, { headers: { cookie } })).status).toBe(404)
+    expect((await fetch(`${base}/api/analysis`, { headers: { cookie } })).status).toBe(405)
+    expect((await fetch(`${base}/api/analysis/j1`, { method: 'DELETE', headers: { cookie } })).status).toBe(405)
+    expect(calls.some((c) => c.url.startsWith(TOOL))).toBe(false)
   })
 })

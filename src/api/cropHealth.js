@@ -1,9 +1,9 @@
 import { parseParcelId } from '../lib/upi.js'
 import { queryAll, queryLayer } from './arcgis.js'
 
-const PARCELS = 0
-const OBSERVATIONS = 1
-const INDEX_GUIDE = 2
+const PARCELS = 'parcels'
+const OBSERVATIONS = 'observations'
+const INDEX_GUIDE = 'guide'
 
 const PARCEL_FIELDS = [
   'upi', 'province', 'district', 'sector', 'cell', 'village', 'area_m2', 'reliability',
@@ -85,7 +85,7 @@ export async function listParcels(options) {
     PARCELS,
     {
       where: '1=1',
-      outFields: 'upi,district,latest_date',
+      outFields: 'upi,district,latest_date,ndvi,ndmi,ndre',
       orderByFields: 'objectid ASC',
       returnGeometry: 'true',
       outSR: '4326',
@@ -97,6 +97,9 @@ export async function listParcels(options) {
       upi: text(a.upi),
       district: text(a.district),
       latestDate: num(a.latest_date),
+      ndvi: num(a.ndvi),
+      ndmi: num(a.ndmi),
+      ndre: num(a.ndre),
       rings: rings(geometry),
     }))
     .filter((parcel) => parcel.upi !== null)

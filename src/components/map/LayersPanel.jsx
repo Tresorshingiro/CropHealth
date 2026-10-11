@@ -98,12 +98,18 @@ export default function LayersPanel({ settings, onChange }) {
 
       <div>
         <p className="px-2 pb-1 text-xs font-semibold text-ink-2">Outlines</p>
-        <Toggle label="Analysed parcels" checked={settings.analysed} onToggle={(analysed) => onChange({ analysed })} />
+        <Toggle label="Areas of interest" checked={settings.analysed} onToggle={(analysed) => onChange({ analysed })} />
         <Toggle
           label="Land parcels (NLA)"
           hint="Every registered parcel, shown when zoomed in"
           checked={settings.land}
           onToggle={(land) => onChange({ land })}
+        />
+        <Toggle
+          label="District boundaries"
+          hint="Rwanda's 30 districts, named as you zoom in"
+          checked={settings.districts}
+          onToggle={(districts) => onChange({ districts })}
         />
       </div>
     </div>

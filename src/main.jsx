@@ -4,8 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { AuthProvider } from './auth/AuthContext.jsx'
 import { ThemeProvider } from './theme/ThemeContext.jsx'
-import '@fontsource-variable/inter'
-import '@fontsource-variable/archivo'
+import '@fontsource-variable/lexend'
 import './index.css'
 
 createRoot(document.getElementById('root')).render(

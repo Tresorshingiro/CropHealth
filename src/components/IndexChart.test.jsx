@@ -52,6 +52,61 @@ describe('IndexChart', () => {
     expect(screen.queryByRole('table')).toBeNull()
   })
 
+  it('counts and lists only the dates in the period', async () => {
+    const range = { from: Date.UTC(2025, 7, 20), to: Date.UTC(2025, 8, 1) - 1 }
+    renderChart({ status: 'ready', observations: ROWS, range })
+    expect(screen.getByText(/1 clear date/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Table' }))
+    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1)
+    expect(screen.getByRole('table')).toHaveTextContent('24 Aug 2025')
+  })
+
+  it('says when no clear date falls in the period', () => {
+    renderChart({ status: 'ready', observations: ROWS, range: { from: Date.UTC(2026, 0, 1), to: Date.UTC(2026, 1, 1) - 1 } })
+    expect(screen.getByText('No clear dates in this period')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Table' })).toBeNull()
+  })
+
+  it('picks a date for the map image from the table, and goes back to the latest', async () => {
+    const onImageDate = vi.fn()
+    const { rerender } = renderChart({ status: 'ready', observations: ROWS, onImageDate })
+    await userEvent.click(screen.getByRole('button', { name: 'Table' }))
+    await userEvent.click(screen.getByRole('button', { name: '24 Aug 2025' }))
+    expect(onImageDate).toHaveBeenCalledWith(1755993600000)
+    expect(screen.queryByRole('button', { name: 'Latest in range' })).toBeNull()
+
+    rerender(
+      <ThemeProvider>
+        <IndexChart status="ready" observations={ROWS} error={null} onRetry={noop} onImageDate={onImageDate} imageDate={1755993600000} />
+      </ThemeProvider>,
+    )
+    expect(screen.getByRole('button', { name: '24 Aug 2025' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Latest in range' }))
+    expect(onImageDate).toHaveBeenLastCalledWith(null)
+  })
+
+  it('draws the lines it is given, with one table column each, and extra actions', async () => {
+    const lines = [{ key: 'p0', name: '5/05/10/02/1939', short: '5/05/10/02/1939', color: '#000000' }]
+    renderChart({
+      status: 'ready',
+      observations: [{ date: 1754265600000, p0: 0.512 }],
+      lines,
+      title: 'NDVI by plot',
+      actions: <button type="button">extra</button>,
+    })
+    expect(screen.getByRole('heading', { name: 'NDVI by plot' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'extra' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Table' }))
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Date', '5/05/10/02/1939'])
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell').map((cell) => cell.textContent)
+    expect(cells).toEqual(['4 Aug 2025', '0.51'])
+  })
+
+  it('shows a toolbar under its title', () => {
+    renderChart({ status: 'ready', observations: ROWS, toolbar: <button type="button">period</button> })
+    expect(screen.getByRole('button', { name: 'period' })).toBeInTheDocument()
+  })
+
   it('shows the error with a retry button', async () => {
     const onRetry = vi.fn()
     renderChart({ status: 'error', error: 'Invalid query', onRetry })

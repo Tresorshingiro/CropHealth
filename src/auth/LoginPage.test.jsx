@@ -91,7 +91,7 @@ describe('sign-in page', () => {
     const fetchMock = mockFetch()
     renderApp('/login')
     await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Enter your GeoHub username and password.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter your username and password.')
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/auth/login')).toBe(false)
   })
 
@@ -106,6 +106,13 @@ describe('sign-in page', () => {
     renderApp(`/login?next=${encodeURIComponent('//evil.example/x')}`)
     await signIn()
     expect(await screen.findByText('home: /')).toBeInTheDocument()
+  })
+
+  it('names the app and never GeoHub', async () => {
+    mockFetch()
+    renderApp('/login')
+    expect(await screen.findByRole('heading', { name: 'Crop Health Monitoring' })).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/GeoHub/)
   })
 
   it('has a theme toggle', async () => {

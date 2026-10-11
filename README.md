@@ -11,7 +11,8 @@ npm run dev
 ```
 
 Open http://localhost:5173 and sign in with a GeoHub account that can see the
-`RW_CropHealth_V2_View` layer. No `.env` file is needed for development.
+`WatchedParcels`, `ParcelObservations` and `IndexGuide` services. No `.env`
+file is needed for development.
 
 ## Test
 
@@ -33,7 +34,7 @@ one port. It speaks plain HTTP: put it behind an HTTPS reverse proxy that sets
 Secure and the portal token is bound to the public address.
 
 The app cannot be hosted as static files only. Sign-in (`/api/auth/*`) and the
-GeoHub proxy (`/api/gh/server/*`) are routes on the Node process.
+GeoHub proxy (`/api/data/*`) are routes on the Node process.
 
 ## How access works
 
@@ -41,9 +42,27 @@ GeoHub proxy (`/api/gh/server/*`) are routes on the Node process.
 2. The server exchanges them for a portal token and stores it in an
    encrypted, HttpOnly cookie. Neither page scripts nor the user can read the
    token from it. Changing `SESSION_SECRET` signs everyone out.
-3. Data requests go to `/api/gh/server/...`. The server adds the token and
-   forwards them to GeoHub. Only `GET` queries on the parcel layer and the
-   observation and index-guide tables of the `RW_CropHealth_V2_View` feature
-   service are forwarded; every other path is answered with 404.
+3. Data requests go to `/api/data/<table>/query`, where the table is
+   `parcels`, `observations` or `guide`. The server picks the GeoHub layer,
+   adds the token and forwards the `GET` query; every other path is answered
+   with 404. `DATA_SOURCE` picks the layers: `referenced` (default) reads the
+   GIS team's `WatchedParcels`, `ParcelObservations` and `IndexGuide`
+   services in their geodatabase, which the analysis notebook writes to;
+   `hosted` reads the notebook's earlier `RW_CropHealth_V2_View`. The app
+   must read where the notebook writes, or new analyses will not appear: use
+   `hosted` only if the GIS team sets the notebook back to its hosted service.
+4. `POST /api/analysis` runs the GIS team's analysis tool (about a minute) for
+   either a parcel, `{ "upi": "5/05/10/02/1939" }`, or a field drawn on the
+   map, `{ "area": { "rings": [[[lng, lat], …]] }, "name": "North field" }`.
+   `GET /api/analysis/<jobId>` reports `running`, `succeeded` or `failed`. The
+   server checks both again: a UPI must be well formed; a field must be one
+   closed ring of at most 500 points inside Rwanda, about 5 km across at
+   most, with a name of letters, digits, spaces, `_` and `-` (up to 26). The
+   tool writes the parcel, or the field as `AREA <name>`, into the feature
+   service, so it then appears in the list with a full report. A report's
+   "Update with new images" sends its id again, `{ "upi": "5/05/10/02/1939" }`
+   or `{ "upi": "AREA North field" }`: the tool re-reads all 14 months, so new
+   Sentinel-2 dates join the history. Whether a
+   user may run it is decided by their GeoHub permissions.
 
 Sentinel-2 imagery is public and loaded by the browser directly.
