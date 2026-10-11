@@ -132,6 +132,12 @@ function parseCookies(header = '') {
 }
 
 async function readJsonBody(req) {
+  // On Vercel the runtime has read the stream already and parsed it into `req.body`.
+  if (req.body !== undefined) {
+    const body = Buffer.isBuffer(req.body) || typeof req.body === 'string' ? JSON.parse(String(req.body) || '{}') : req.body
+    if (JSON.stringify(body ?? {}).length > 64 * 1024) throw new Error('Request body too large')
+    return body ?? {}
+  }
   const chunks = []
   let size = 0
   for await (const chunk of req) {

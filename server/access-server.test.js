@@ -120,6 +120,19 @@ describe('sign-in', () => {
     expect(res.status).toBe(400)
   })
 
+  it('reads a body the host has already parsed into req.body, as Vercel does', async () => {
+    const middleware = createAccessMiddleware(config, async (url, init) => portal(String(url), init))
+    server = http.createServer(async (req, res) => {
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      req.body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      middleware(req, res)
+    })
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const res = await login(`http://127.0.0.1:${server.address().port}`, 'tresor', 'right')
+    expect(res.status).toBe(200)
+  })
+
   it('reports an unreachable portal as 502', async () => {
     const { base } = await start(() => {
       throw new Error('ECONNREFUSED')

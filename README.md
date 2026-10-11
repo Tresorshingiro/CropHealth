@@ -36,6 +36,13 @@ Secure and the portal token is bound to the public address.
 The app cannot be hosted as static files only. Sign-in (`/api/auth/*`) and the
 GeoHub proxy (`/api/data/*`) are routes on the Node process.
 
+### On Vercel
+
+`vercel.json` sends every `/api/*` request to the function in `api/index.js`
+(the same access server) and every other path to `index.html`. Set
+`SESSION_SECRET` (and any other `.env` values) in the project's Environment
+Variables, then redeploy.
+
 ## How access works
 
 1. The sign-in form posts the GeoHub username and password to this server.
